@@ -1,0 +1,61 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+                xmlns:tools="http://schemas.android.com/tools"
+             android:layout_width="match_parent"
+             android:layout_height="match_parent"
+             tools:context="com.stuff.nsh9b3.uface.WebService">
+
+    <TextView
+        android:id="@+id/textView_select_registered_service"
+        android:textAppearance="@style/TextAppearance.AppCompat.Display1"
+        android:text="@string/header_select_service"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true"/>
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:weightSum="5"
+        android:layout_below="@id/textView_select_registered_service"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true">
+
+        <ListView
+            android:id="@+id/listView_services"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_centerHorizontal="true"
+            android:layout_weight="4"/>
+
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:weightSum="2">
+
+            <TextView
+                android:id="@+id/textView_selected_service"
+                android:hint="@string/hint_selected_service"
+                android:gravity="center_horizontal|center_vertical"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_centerHorizontal="true"
+                android:textAppearance="@style/TextAppearance.AppCompat.Large"
+                android:layout_weight="1"/>
+
+            <Button
+                android:id="@+id/button_select_service"
+                android:text="@string/select_sevice_button_text"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_centerHorizontal="true"
+                android:layout_weight="1"
+                android:visibility="gone"/>
+        </LinearLayout>
+    </LinearLayout>
+
+</RelativeLayout>

@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">UFace</string>
+    <string name="add_button_text">+</string>
+
+    <string name="header_select_service">Registered Services</string>
+    <string name="hint_selected_service">Select a Service</string>
+    <string name="select_sevice_button_text">Go To Service Page</string>
+</resources>
