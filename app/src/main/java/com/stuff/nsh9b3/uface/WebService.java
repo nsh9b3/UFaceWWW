@@ -4,11 +4,14 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.media.Image;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.support.v4.content.ContextCompat;
 import android.support.v4.content.FileProvider;
 import android.util.Log;
 import android.view.View;
@@ -51,6 +54,9 @@ public class WebService extends Activity
     String userID = "";
     boolean acceptUserID = true;
     int counter;
+    Bitmap cBitmap;
+    Bitmap gBitmap;
+    int[][] pixels;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -266,12 +272,14 @@ public class WebService extends Activity
                 File file = new File(mCurrentPhotoPath);
                 if(file.exists())
                 {
-                    Log.d("TAG", "File exists");
-                    Bitmap bitmap = BitmapFactory.decodeFile(mCurrentPhotoPath);
-                    Log.d("TAG", "here");
+                    cBitmap = BitmapFactory.decodeFile(mCurrentPhotoPath);
+                    gBitmap = ImageTransform.toGrayscale(cBitmap);
+                    ImageTransform.setGridPixelMap(pixels, gBitmap);
                 }
                 else
-                    Log.d("TAG", "File doesn't exist");
+                {
+                    // FIle wasn't created...
+                }
             }
             else
             {
