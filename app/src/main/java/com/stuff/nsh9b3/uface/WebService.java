@@ -57,6 +57,8 @@ public class WebService extends Activity
     Bitmap cBitmap;
     Bitmap gBitmap;
     int[][] pixels;
+    byte[][] featureVector;
+    int[] publicKey;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -67,6 +69,7 @@ public class WebService extends Activity
         switch(startIntent.getStringExtra(ServiceTask.START))
         {
             case ServiceTask.REGISTER:
+                // Show that we are registering a service
                 setContentView(R.layout.select_service);
                 
                 // Get Views in this Layout
@@ -74,7 +77,7 @@ public class WebService extends Activity
                 textViewSelectedService = (TextView)findViewById(R.id.textView_selected_service);
                 buttonGoToServicePage = (Button)findViewById(R.id.button_select_service);
 
-                // Grab Services List
+                // Grab Services List from Data Server
                 getServicesList();
 
                 // Show Services to User
@@ -115,25 +118,20 @@ public class WebService extends Activity
     private void getServicesList()
     {
         // Get this list from server
+        // TODO: talk to an actual server
         servicesList = new ArrayList<>();
-        servicesList.add("Test1");
-        servicesList.add("Test2");
-        servicesList.add("Test3");
-        servicesList.add("Test4");
-        servicesList.add("Test5");
-        servicesList.add("Test6");
-        servicesList.add("Test7");
-        servicesList.add("Test8");
-        servicesList.add("Test9");
-        servicesList.add("Test10");
-        servicesList.add("Test11");
-        servicesList.add("Test12");
+        servicesList.add("Bank");
+        servicesList.add("Health");
+        servicesList.add("School");
+        servicesList.add("etc.");
     }
 
     public void showRegistration()
     {
+        // Change the layout to show information on the selected service
         setContentView(R.layout.register_service);
 
+        // Grab all the views
         textViewSelectedService = (TextView)findViewById(R.id.textView_service_name);
         editTextUserID = (EditText)findViewById(R.id.editText_user_id);
         progressBarIsValid = (ProgressBar)findViewById(R.id.progressBar_is_valid);
@@ -143,17 +141,25 @@ public class WebService extends Activity
         textViewUserID = (TextView)findViewById(R.id.textView_user_id);
         textViewLabelUserId = (TextView)findViewById(R.id.textView_label_user_id);
 
+        // Set the Title to be the name of the selected Service
         textViewSelectedService.setText(serviceString);
+
+        // Validate if the name selected was already taken on the service
         btnCheckValidName.setOnClickListener(new View.OnClickListener()
         {
             @Override
             public void onClick(View view)
             {
+                // Continue only if we are accepting new input
                 if(!acceptUserID)
                     return;
+
+                // Get the user ID and make sure it's not an empty string
                 userID = editTextUserID.getText().toString();
                 if(userID.compareTo("") == 0)
                     return;
+
+                // Hide certain views unless the name is proven to be a valid name
                 btnTakePic.setVisibility(View.GONE);
                 textViewUserID.setVisibility(View.GONE);
                 textViewLabelUserId.setVisibility(View.GONE);
@@ -161,11 +167,14 @@ public class WebService extends Activity
                 progressBarIsValid.setVisibility(View.VISIBLE);
                 final int max = 10000;
 
-                AsyncTask<Void, Void, Void> test = new AsyncTask<Void, Void, Void>()
+                // Used to check the Web Service if the name is valid
+                // TODO: work with a server
+                AsyncTask<Void, Void, Void> checkValidName = new AsyncTask<Void, Void, Void>()
                 {
                     @Override
                     protected Void doInBackground(Void... voids)
                     {
+                        // TODO: do something and not nothing
                         while(counter < max)
                         {
                             counter++;
@@ -189,6 +198,7 @@ public class WebService extends Activity
                         super.onPostExecute(aVoid);
                         progressBarIsValid.setVisibility(View.GONE);
                         Random rand = new Random();
+                        //TODO: Change this when done talking to a server
                         if(true)
                         {
                             imageViewValidMark.setBackgroundResource(R.drawable.check);
@@ -211,7 +221,7 @@ public class WebService extends Activity
                     }
                 };
 
-                test.execute();
+                checkValidName.execute();
 
             }
         });
@@ -219,17 +229,36 @@ public class WebService extends Activity
 
     public void showPasswordUpload()
     {
+        // Show the user's selected VALID ID
         textViewUserID.setText(userID);
 
+        // Show options for the user to take (take a picture)
         btnTakePic.setVisibility(View.VISIBLE);
         textViewLabelUserId.setVisibility(View.VISIBLE);
         textViewUserID.setVisibility(View.VISIBLE);
 
+        // Take a picture to register
+        // Also grab a newly generated public key from the Key Server
+        // TODO: talk to the key server
         btnTakePic.setOnClickListener(new View.OnClickListener()
         {
             @Override
             public void onClick(View view)
             {
+                // Start a background task to get a new public key
+                AsyncTask<Void, Void, Void> getPublicKey = new AsyncTask<Void, Void, Void>()
+                {
+                    @Override
+                    protected Void doInBackground(Void... params)
+                    {
+                        Paillier paillier = new Paillier();
+
+                        return null;
+                    }
+                };
+
+                getPublicKey.execute();
+
                 Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                 // Ensure that there's a camera activity to handle the intent
                 if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
@@ -241,13 +270,8 @@ public class WebService extends Activity
                         // Error occurred while creating the File
                     }
 
-                    if(photoFile.exists())
-                        Log.d("TAG", "File exists");
-                    else
-                        Log.d("TAG", "File doesn't exist");
-
                     // Continue only if the File was successfully created
-                    if (photoFile != null) {
+                    if (photoFile.exists()) {
                         Uri photoURI = FileProvider.getUriForFile(getApplicationContext(),
                                 "com.stuff.nsh9b3.uface.fileprovider",
                                 photoFile);
@@ -259,6 +283,8 @@ public class WebService extends Activity
             }
         });
     }
+
+
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data)
@@ -274,7 +300,8 @@ public class WebService extends Activity
                 {
                     cBitmap = BitmapFactory.decodeFile(mCurrentPhotoPath);
                     gBitmap = ImageTransform.toGrayscale(cBitmap);
-                    ImageTransform.setGridPixelMap(pixels, gBitmap);
+                    pixels = ImageTransform.setGridPixelMap(gBitmap);
+                    featureVector = LBP.generateFeatureVector(pixels);
                 }
                 else
                 {
