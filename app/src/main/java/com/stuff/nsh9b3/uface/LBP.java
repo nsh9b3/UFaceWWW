@@ -189,11 +189,9 @@ public class LBP
         int bitsUsedPerInt = 0;
         int bitsNeededPerInt = bitsPerInt;
         int bitsUsedPerByte = 0;
-        int counter = 0;
 
         for(int bin : featureVector)
         {
-            counter++;
             emptyBits += zeroBitsPerInt;
             while(emptyBits > 0)
             {

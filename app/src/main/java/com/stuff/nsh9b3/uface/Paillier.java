@@ -36,7 +36,7 @@ public class Paillier {
      * p and q are two large primes. 
      * lambda = lcm(p-1, q-1) = (p-1)*(q-1)/gcd(p-1, q-1).
      */
-    private BigInteger p,  q,  lambda;
+    private BigInteger p,  q,  lambda, u;
     /**
      * n = p*q, where p and q are two large primes.
      */
@@ -70,6 +70,24 @@ public class Paillier {
         KeyGeneration(1024, 64);
     }
 
+    public Paillier(String nString, String gString, String bitLengthString)
+    {
+        this.n = new BigInteger(nString);
+        this.nsquare = n.multiply(n);
+        this.g = new BigInteger(gString);
+        this.bitLength = Integer.parseInt(bitLengthString);
+    }
+
+    public Paillier(String nString, String gString, String lamdaString, String uString, String bitLengthString)
+    {
+        this.n = new BigInteger(nString);
+        this.nsquare = n.multiply(n);
+        this.g = new BigInteger(gString);
+        this.bitLength = Integer.parseInt(bitLengthString);
+        this.lambda = new BigInteger(lamdaString);
+        this.u = new BigInteger(uString);
+    }
+
     /**
      * Sets up the public key and private key.
      * @param bitLengthVal number of bits of modulus.
@@ -96,11 +114,7 @@ public class Paillier {
         }
         while (g.modPow(lambda, nsquare).subtract(BigInteger.ONE).divide(n).gcd(n).intValue() != 1);
 
-        /* check whether g is good.*/
-        if (g.modPow(lambda, nsquare).subtract(BigInteger.ONE).divide(n).gcd(n).intValue() != 1) {
-            Log.d("Paillier", "g is not good. Choose g again.");
-            // TODO: exit or rerun
-        }
+        u = g.modPow(lambda, nsquare).subtract(BigInteger.ONE).divide(n).modInverse(n);
     }
 
     /**
@@ -130,7 +144,6 @@ public class Paillier {
      * @return plaintext as a BigInteger
      */
     public BigInteger Decryption(BigInteger c) {
-        BigInteger u = g.modPow(lambda, nsquare).subtract(BigInteger.ONE).divide(n).modInverse(n);
         return c.modPow(lambda, nsquare).subtract(BigInteger.ONE).divide(n).multiply(u).mod(n);
     }
 
@@ -179,5 +192,10 @@ public class Paillier {
     public BigInteger[] getPublicKey()
     {
         return new BigInteger[]{n, g};
+    }
+
+    public BigInteger[] getPrivateKey()
+    {
+        return new BigInteger[]{lambda, u};
     }
 }

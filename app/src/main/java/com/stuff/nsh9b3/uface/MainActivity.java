@@ -3,7 +3,6 @@ package com.stuff.nsh9b3.uface;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -13,20 +12,20 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 
-import static java.security.AccessController.getContext;
-
 public class MainActivity extends Activity implements View.OnClickListener
 {
-    private final static String INTENT_EXTRA = "com.stuff.nsh9b3.uface.MainActivity";
+    // Intent IDs
     private final static int NEW_SERVICE_INTENT = 1;
-    
-    private ArrayList<Button> buttonList;
-    private ArrayList<LinearLayout> layoutList;
-    
-    private final static int btnOffset = 1000;
-    private final static int layOffset = 100;
 
-    private int nextId = 1;
+    // List of Buttons (services) a user can select
+    public ArrayList<Button> buttonList;
+
+    // List of layouts (rows of services) to place new services
+    private ArrayList<LinearLayout> layoutList;
+
+    // These are offset values so btns and layouts have different IDs
+    private final static int btnIDOffset = 1000;
+    private final static int layIDOffset = 100;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -34,24 +33,32 @@ public class MainActivity extends Activity implements View.OnClickListener
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // Get the add button and set the listener to this activity (which is a clickListener)
         Button addButton = (Button)findViewById(R.id.btn_add);
         addButton.setOnClickListener(this);
 
-        buttonList = new ArrayList<>();
-        layoutList = new ArrayList<>();
+        // Gets the list of buttons and layouts
+        getServices();
     }
 
+    // On Click Listener
     @Override
     public void onClick(View view)
     {
+        // First figure out what was pressed
         switch(view.getId())
         {
+            // If the add button was pressed
+            // Register a new service
             case R.id.btn_add:
                 Intent newServiceIntent = new Intent(this, WebService.class);
                 newServiceIntent.putExtra(ServiceTask.START, ServiceTask.REGISTER);
                 startActivityForResult(newServiceIntent, NEW_SERVICE_INTENT);
                 break;
+            // If any other button was pressed (the rest are all services)
+            // Authenticate a created service
             default:
+                // TODO: something other than nothing
                 Button pressedButton = (Button)view;
                 Intent selectServiceIntent = new Intent(this, WebService.class);
                 Toast.makeText(this, ((Button) view).getText().toString(), Toast.LENGTH_SHORT).show();
@@ -59,15 +66,19 @@ public class MainActivity extends Activity implements View.OnClickListener
         }
     }
 
+    // Called when the previous activity returns to this activity
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data)
     {
         super.onActivityResult(requestCode, resultCode, data);
 
+        // If we created a new service
         if(requestCode == NEW_SERVICE_INTENT)
         {
+            // And everything went okay
             if(resultCode == Activity.RESULT_OK)
             {
+
                 boolean createdService = false;
                 String serviceName = data.getStringExtra(ServiceTask.SELECTION);
                 for(Button btn : buttonList)
@@ -114,7 +125,7 @@ public class MainActivity extends Activity implements View.OnClickListener
             childLayout.setLayoutParams(layoutParams);
             childLayout.setWeightSum(3);
 
-            childLayout.setId(layoutList.size() + layOffset);
+            childLayout.setId(layoutList.size() + layIDOffset);
 
             parentLayout.addView(childLayout);
             layoutList.add(childLayout);
@@ -135,10 +146,17 @@ public class MainActivity extends Activity implements View.OnClickListener
 
         newServiceBtn.setLayoutParams(btnParams);
         newServiceBtn.setText(serviceName);
-        newServiceBtn.setId(buttonList.size() + btnOffset);
+        newServiceBtn.setId(buttonList.size() + btnIDOffset);
         newServiceBtn.setOnClickListener(this);
 
         childLayout.addView(newServiceBtn);
         buttonList.add(newServiceBtn);
+    }
+
+    private void getServices()
+    {
+        // TODO: Use sharedPreferences
+        buttonList = new ArrayList<>();
+        layoutList = new ArrayList<>();
     }
 }

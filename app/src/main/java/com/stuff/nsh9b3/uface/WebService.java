@@ -13,6 +13,9 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.FileProvider;
+import android.support.v4.content.LocalBroadcastManager;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
@@ -25,12 +28,18 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class WebService extends Activity
 {
@@ -54,11 +63,16 @@ public class WebService extends Activity
     String userID = "";
     boolean acceptUserID = true;
     int counter;
-    Bitmap cBitmap;
     Bitmap gBitmap;
     int[][] pixels;
     byte[][] featureVector;
-    int[] publicKey;
+    BigInteger[] encryptedFV;
+    Paillier paillier;
+    boolean haveKey = false;
+    boolean haveFV = false;
+    String encryptedFVLoc;
+    BigInteger[] publicKey;
+    BigInteger[] privateKey;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -115,17 +129,25 @@ public class WebService extends Activity
         }
     }
 
+    // Get the list of services from the UFace Data server
     private void getServicesList()
     {
-        // Get this list from server
+        // Get this list from server (but don't show previously registered services)
         // TODO: talk to an actual server
         servicesList = new ArrayList<>();
         servicesList.add("Bank");
         servicesList.add("Health");
         servicesList.add("School");
         servicesList.add("etc.");
+
+        // TODO: Compare list from server to already registered services and don't show them
+        /*for(String service : servicesList)
+        {
+
+        }*/
     }
 
+    // Show options for registering the selected web service
     public void showRegistration()
     {
         // Change the layout to show information on the selected service
@@ -144,6 +166,32 @@ public class WebService extends Activity
         // Set the Title to be the name of the selected Service
         textViewSelectedService.setText(serviceString);
 
+        // If the text is changed, be sure to NOT show options for the password
+        editTextUserID.addTextChangedListener(new TextWatcher()
+        {
+            @Override
+            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2)
+            {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2)
+            {
+                // Hide certain views unless the name is proven to be a valid name
+                btnTakePic.setVisibility(View.GONE);
+                textViewUserID.setVisibility(View.GONE);
+                textViewLabelUserId.setVisibility(View.GONE);
+                imageViewValidMark.setVisibility(View.GONE);
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable)
+            {
+
+            }
+        });
+
         // Validate if the name selected was already taken on the service
         btnCheckValidName.setOnClickListener(new View.OnClickListener()
         {
@@ -154,16 +202,12 @@ public class WebService extends Activity
                 if(!acceptUserID)
                     return;
 
-                // Get the user ID and make sure it's not an empty string
+                // Get the user ID and make sure it's not an empty string or has bad characters
                 userID = editTextUserID.getText().toString();
-                if(userID.compareTo("") == 0)
+                if(!isGoodUserID(userID))
                     return;
 
-                // Hide certain views unless the name is proven to be a valid name
-                btnTakePic.setVisibility(View.GONE);
-                textViewUserID.setVisibility(View.GONE);
-                textViewLabelUserId.setVisibility(View.GONE);
-                imageViewValidMark.setVisibility(View.GONE);
+                // Show the progressbar
                 progressBarIsValid.setVisibility(View.VISIBLE);
                 final int max = 10000;
 
@@ -207,7 +251,7 @@ public class WebService extends Activity
                         else
                         {
                             imageViewValidMark.setBackgroundResource(R.drawable.close);
-                            Toast.makeText(getApplicationContext(), "Please enter a different User ID", Toast.LENGTH_LONG).show();
+                            Toast.makeText(getApplicationContext(), "This ID has already been used for registration. Please pick another.", Toast.LENGTH_LONG).show();
                         }
                         imageViewValidMark.setVisibility(View.VISIBLE);
                         acceptUserID = true;
@@ -219,14 +263,12 @@ public class WebService extends Activity
                         super.onProgressUpdate(values);
                         progressBarIsValid.setProgress(counter/max);
                     }
-                };
-
-                checkValidName.execute();
-
+                }.execute();
             }
         });
     }
 
+    // Show options to finish registration after a valid name has been chosen
     public void showPasswordUpload()
     {
         // Show the user's selected VALID ID
@@ -251,27 +293,49 @@ public class WebService extends Activity
                     @Override
                     protected Void doInBackground(Void... params)
                     {
-                        Paillier paillier = new Paillier();
+                        paillier = new Paillier("130608821557841900443360573990060231600720639068635884870756456142930941480804192983990854478613114648787582498011693243077173475850692956250017555398483238328099541842782019438340249031750695665874603477846790009046878241815288144729763574658057914680190158946544876393438515631155150484847668488183868105893",
+                                "8715161750352038003855234302887932079801138728954207932245027351191172517353630598400311130000817553939984622880281320389904272535238541835806448941586218917232876912910443137583132034235838974323100942032187813695301571205816522358575761111283034852749185254197245814808374803657021294470498798380881148553580717433731785726037233004579908831642460826767151249645068973275412116024906036803392245770242535027189122010103221811510344288569977102817252563630275153915092831480899329906091413418200391735742340524277988104603739915616826436232606625654946447897928406710231256856380521783511388678981419291024236658823",
+                                "65304410778920950221680286995030115800360319534317942435378228071465470740402096491995427239306557324393791249005846621538586737925346478125008777699241607680005207673965152353188838145624327895176457997361602266207450001402205712660875434148564101191018822712233348241627287112305993056373620460949250660454",
+                                "44434977212474549420262809225036713658433520993151896021541158481720504859866799959494127361520327480145280505284544157413674629448437900830766576437226947299954992686129603112736407528759331072466437778674243883296282585308483025725199281344730934149325912450292620111994432444297320422768672241197675832052",
+                                "1024");
+                        publicKey = paillier.getPublicKey();
+                        privateKey = paillier.getPrivateKey();
 
                         return null;
                     }
-                };
 
-                getPublicKey.execute();
+                    @Override
+                    protected void onPostExecute(Void aVoid)
+                    {
+                        super.onPostExecute(aVoid);
+
+                        // If this finishes after the camera encrypt the image
+                        if(haveFV)
+                        {
+                            encryptedFVLoc = encryptFV();
+                        } else
+                        {
+                            haveKey = true;
+                        }
+                    }
+                }.execute();
 
                 Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                 // Ensure that there's a camera activity to handle the intent
                 if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
                     // Create the File where the photo should go
                     File photoFile = null;
-                    try {
+                    try
+                    {
                         photoFile = createImageFile();
                     } catch (IOException ex) {
                         // Error occurred while creating the File
                     }
 
                     // Continue only if the File was successfully created
-                    if (photoFile.exists()) {
+                    if (photoFile.exists())
+                    {
+                        // Take a picture and place the information in the newly created file
                         Uri photoURI = FileProvider.getUriForFile(getApplicationContext(),
                                 "com.stuff.nsh9b3.uface.fileprovider",
                                 photoFile);
@@ -284,37 +348,47 @@ public class WebService extends Activity
         });
     }
 
-
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data)
     {
         super.onActivityResult(requestCode, resultCode, data);
 
+        // If we are returning from taking a picture
         if(requestCode == REQUEST_TAKE_PHOTO)
         {
+            // If no errors happened
             if(resultCode == Activity.RESULT_OK)
             {
+                // Get the image and turn it to grayscale
                 File file = new File(mCurrentPhotoPath);
-                if(file.exists())
+                gBitmap = ImageTransform.toGrayscale(BitmapFactory.decodeFile(mCurrentPhotoPath));
+
+                // Then delete the file
+                file.delete();
+                mCurrentPhotoPath = "";
+
+                // Get the feature vector of this image
+                pixels = ImageTransform.setGridPixelMap(gBitmap);
+                featureVector = LBP.generateFeatureVector(pixels);
+
+                // If we have the key already then encrypt the image; otherwise, wait to get the public key
+                if(haveKey)
                 {
-                    cBitmap = BitmapFactory.decodeFile(mCurrentPhotoPath);
-                    gBitmap = ImageTransform.toGrayscale(cBitmap);
-                    pixels = ImageTransform.setGridPixelMap(gBitmap);
-                    featureVector = LBP.generateFeatureVector(pixels);
-                }
-                else
+                    encryptedFVLoc = encryptFV();
+                } else
                 {
-                    // FIle wasn't created...
+                    haveFV = true;
                 }
             }
             else
             {
                 // Back was pressed and no picture was taken
+                Toast.makeText(this, "This service hasn't been registered. Please take a selfie.", Toast.LENGTH_LONG).show();
             }
         }
     }
 
+    // Creates a temporary image
     private File createImageFile() throws IOException {
         // Create an image file name
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
@@ -329,5 +403,84 @@ public class WebService extends Activity
         // Save a file: path for use with ACTION_VIEW intents
         mCurrentPhotoPath = image.getAbsolutePath();
         return image;
+    }
+
+    // Encrypts the feature vector using paillier encryption
+    // Outputs the feature vector to a separate file (till it's sent off)
+    private String encryptFV()
+    {
+        encryptedFV = new BigInteger[featureVector.length];
+
+        for(int i = 0; i < featureVector.length; i++)
+        {
+            BigInteger bigInt = new BigInteger(featureVector[i]);
+            encryptedFV[i] = paillier.Encryption(bigInt);
+        }
+
+        // Write the ciphertext to a File
+        File outputDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES); // context being the Activity pointer
+        File outputFile = null;
+        try
+        {
+            outputFile = File.createTempFile("encryptedHistogram", ".txt", outputDir);
+        } catch (Exception e)
+        {
+            return null;
+        }
+
+        BufferedWriter writer = null;
+        try
+        {
+            writer = new BufferedWriter(new FileWriter(outputFile.getAbsoluteFile()));
+            for (int i = 0; i < encryptedFV.length; i++)
+            {
+                writer.write(encryptedFV[i] + " ");
+            }
+        } catch (Exception e)
+        {
+            return null;
+        } finally
+        {
+            try
+            {
+                if (writer != null)
+                {
+                    writer.close();
+                }
+            } catch (IOException e)
+            {
+                return null;
+            }
+        }
+
+        Log.d("TAG", outputFile.getAbsolutePath());
+        return outputFile.getAbsolutePath();
+    }
+
+    // Checks if the username contains only valid characters
+    // TODO: stop /n from working at the end of a name
+    private boolean isGoodUserID(String name)
+    {
+        boolean isGood = true;
+
+        // Alphanumeric characters only
+        String pattern = "^[a-zA-Z0-9]*$";
+        Pattern r = Pattern.compile(pattern);
+        Matcher m = r. matcher(name);
+
+        // Make sure the name is long enough
+        if(name.length() < 8)
+        {
+            isGood = false;
+            Toast.makeText(this, "Please use at least 8 characters", Toast.LENGTH_LONG).show();
+        }
+        // Make sure the name contains only alphanumeric characters
+        else if(!m.find())
+        {
+            isGood = false;
+            Toast.makeText(this, "Please only use alphanumeric characters", Toast.LENGTH_LONG).show();
+        }
+
+        return isGood;
     }
 }
