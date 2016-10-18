@@ -36,7 +36,7 @@ public class LBP
         int startRow = (region >= 4 ? 0 : 1);
         int endRow = (region < 12 ? ImageTransform.sectionHeight : ImageTransform.sectionHeight - 1);
         int startCol = (region % 4 != 0 ? 0 : 1);
-        int endCol = (region % 4 != 3 ? ImageTransform.sectionWidth : ImageTransform.sectionHeight - 1);
+        int endCol = (region % 4 != 3 ? ImageTransform.sectionWidth : ImageTransform.sectionWidth - 1);
 
         for(int i = startRow; i < endRow; i++)
         {
@@ -111,7 +111,9 @@ public class LBP
         else if(!secDown && secRight)
             dR = pixels[region + 1][(row + 1) * ImageTransform.sectionWidth] & 0xFF;
         else
+        {
             dR = pixels[region][(row + 1) * ImageTransform.sectionWidth + (col + 1)] & 0xFF;
+        }
 
 
         // Down Pixel
@@ -223,14 +225,30 @@ public class LBP
             }
             while(bitsNeededPerInt >= 8)
             {
-                nextByte = (byte)((bin >>> (bitsNeededPerInt - 8)) & 0xFF);
-                bitsNeededPerInt -= 8;
-                byteFV[bigIntIndex][byteIndex++] = nextByte;
-                if(byteIndex == bytesPerBigInt)
+                if(bitsUsedPerByte == 0)
                 {
-                    bigIntIndex++;
-                    emptyBits += zeroBitsPerBigInt;
-                    byteIndex = 0;
+                    nextByte = (byte) ((bin >>> (bitsNeededPerInt - 8)) & 0xFF);
+                    bitsNeededPerInt -= 8;
+                    byteFV[bigIntIndex][byteIndex++] = nextByte;
+                    if (byteIndex == bytesPerBigInt)
+                    {
+                        bigIntIndex++;
+                        emptyBits += zeroBitsPerBigInt;
+                        byteIndex = 0;
+                    }
+                } else
+                {
+                    bitsUsedPerInt = 8 - bitsUsedPerByte;
+                    nextByte = (byte)(((bin >>> (bitsPerInt - bitsUsedPerInt)) & 0xFF) | nextByte);
+                    bitsNeededPerInt -= bitsUsedPerInt;
+                    bitsUsedPerByte = 0;
+                    byteFV[bigIntIndex][byteIndex++] = nextByte;
+                    if (byteIndex == bytesPerBigInt)
+                    {
+                        bigIntIndex++;
+                        emptyBits += zeroBitsPerBigInt;
+                        byteIndex = 0;
+                    }
                 }
             }
             if(bitsNeededPerInt != 0)
@@ -243,6 +261,11 @@ public class LBP
                 nextByte = 0x00;
             }
             bitsNeededPerInt = bitsPerInt;
+        }
+
+        if(bitsUsedPerByte != 0)
+        {
+            byteFV[bigIntIndex][byteIndex++] = nextByte;
         }
 
         return byteFV;

@@ -4,16 +4,12 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Color;
-import android.media.Image;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
-import android.support.v4.content.ContextCompat;
 import android.support.v4.content.FileProvider;
-import android.support.v4.content.LocalBroadcastManager;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
@@ -28,16 +24,25 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.math.BigInteger;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -73,6 +78,7 @@ public class WebService extends Activity
     String encryptedFVLoc;
     BigInteger[] publicKey;
     BigInteger[] privateKey;
+    HashMap<String, JSONObject> servicesMap;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -93,25 +99,6 @@ public class WebService extends Activity
 
                 // Grab Services List from Data Server
                 getServicesList();
-
-                // Show Services to User
-                servicesAdapter = new ArrayAdapter(this, android.R.layout.simple_list_item_1, servicesList);
-                listViewServices.setAdapter(servicesAdapter);
-                listViewServices.setOnItemClickListener(new AdapterView.OnItemClickListener()
-                {
-                    @Override
-                    public void onItemClick(AdapterView<?> adapterView, View view, int i, long l)
-                    {
-                        // Show button now that the user made a selection
-                        buttonGoToServicePage.setVisibility(View.VISIBLE);
-
-                        // Grab the user's selection
-                        serviceString = (String) adapterView.getItemAtPosition(i);
-
-                        // Show it as the selected service
-                        textViewSelectedService.setText(serviceString);
-                    }
-                });
 
                 // Show the services information page (if pressed)
                 buttonGoToServicePage.setOnClickListener(new View.OnClickListener()
@@ -135,10 +122,81 @@ public class WebService extends Activity
         // Get this list from server (but don't show previously registered services)
         // TODO: talk to an actual server
         servicesList = new ArrayList<>();
-        servicesList.add("Bank");
-        servicesList.add("Health");
-        servicesList.add("School");
-        servicesList.add("etc.");
+        servicesMap = new HashMap<>();
+
+        AsyncTask<Void, Void, Void> getServices = new AsyncTask<Void, Void, Void>()
+        {
+            String json;
+            @Override
+            protected Void doInBackground(Void... voids)
+            {
+                try
+                {
+                    URL url = new URL("http://131.151.8.33:3000/server_list");
+                    HttpURLConnection urlConnection = (HttpURLConnection)url.openConnection();
+                    urlConnection.setRequestMethod("GET");
+
+                    urlConnection.connect();
+
+                    BufferedReader br = new BufferedReader(new InputStreamReader(urlConnection.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        sb.append(line+"\n");
+                    }
+                    br.close();
+
+                    String result = sb.toString().replaceAll("\\\\", "");
+                    result = result.substring(1, result.length() - 2);
+                    JSONObject jObject = new JSONObject(result);
+                    JSONArray jArray = jObject.getJSONArray("Services");
+                    for(int i =0; i < jArray.length(); i++)
+                    {
+                        JSONObject service = jArray.getJSONObject(i);
+                        servicesList.add(service.getString("Name"));
+                        servicesMap.put(service.getString("Name"), service);
+                    }
+
+                } catch (MalformedURLException e)
+                {
+                    e.printStackTrace();
+                } catch (IOException e)
+                {
+                    e.printStackTrace();
+                } catch (JSONException e)
+                {
+                    e.printStackTrace();
+                }
+
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(Void aVoid)
+            {
+                super.onPostExecute(aVoid);
+
+                // Show Services to User
+                servicesAdapter = new ArrayAdapter(getApplicationContext(), android.R.layout.simple_list_item_1, servicesList);
+                listViewServices.setAdapter(servicesAdapter);
+                listViewServices.setOnItemClickListener(new AdapterView.OnItemClickListener()
+                {
+                    @Override
+                    public void onItemClick(AdapterView<?> adapterView, View view, int i, long l)
+                    {
+                        // Show button now that the user made a selection
+                        buttonGoToServicePage.setVisibility(View.VISIBLE);
+
+                        // Grab the user's selection
+                        serviceString = (String) adapterView.getItemAtPosition(i);
+
+                        // Show it as the selected service
+                        textViewSelectedService.setText(serviceString);
+                    }
+                });
+            }
+
+        }.execute();
 
         // TODO: Compare list from server to already registered services and don't show them
         /*for(String service : servicesList)
@@ -453,7 +511,6 @@ public class WebService extends Activity
             }
         }
 
-        Log.d("TAG", outputFile.getAbsolutePath());
         return outputFile.getAbsolutePath();
     }
 
