@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -28,12 +29,16 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -176,8 +181,14 @@ public class WebService extends Activity
             {
                 super.onPostExecute(aVoid);
 
+                // TODO: Compare list from server to already registered services and don't show them
+                /*for(String service : servicesList)
+                {
+
+                }*/
+
                 // Show Services to User
-                servicesAdapter = new ArrayAdapter(getApplicationContext(), android.R.layout.simple_list_item_1, servicesList);
+                servicesAdapter = new ArrayAdapter(getBaseContext(), android.R.layout.simple_list_item_1, servicesList);
                 listViewServices.setAdapter(servicesAdapter);
                 listViewServices.setOnItemClickListener(new AdapterView.OnItemClickListener()
                 {
@@ -197,12 +208,6 @@ public class WebService extends Activity
             }
 
         }.execute();
-
-        // TODO: Compare list from server to already registered services and don't show them
-        /*for(String service : servicesList)
-        {
-
-        }*/
     }
 
     // Show options for registering the selected web service
@@ -270,18 +275,60 @@ public class WebService extends Activity
                 final int max = 10000;
 
                 // Used to check the Web Service if the name is valid
-                // TODO: work with a server
                 AsyncTask<Void, Void, Void> checkValidName = new AsyncTask<Void, Void, Void>()
                 {
+                    boolean isValid = false;
                     @Override
                     protected Void doInBackground(Void... voids)
                     {
-                        // TODO: do something and not nothing
-                        while(counter < max)
+                        try
                         {
-                            counter++;
-                            publishProgress();
+                            URL url = new URL("http://131.151.8.33:3000/web_service_bank");
+                            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                            urlConnection.setRequestMethod("POST");
+
+                            urlConnection.setRequestProperty("Content-Type", "application/json");
+                            urlConnection.setRequestProperty("Accept", "application/json");
+
+                            urlConnection.connect();
+
+                            JSONObject jObject = new JSONObject();
+                            jObject.accumulate("Name", userID);
+                            jObject.accumulate("Objective", "Verify");
+
+                            String json = jObject.toString();
+
+                            OutputStream os = urlConnection.getOutputStream();
+                            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                            writer.write(json);
+                            writer.flush();
+
+                            writer.close();
+                            os.close();
+
+                            InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                            String response = convertStreamToString(is);
+                            if(response.compareTo("true\n") == 0)
+                            {
+                                isValid = true;
+                            }
+                            else
+                            {
+                                isValid = false;
+                            }
+
+                        } catch(MalformedURLException e)
+                        {
+                            e.printStackTrace();
+                        } catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        } catch (JSONException e)
+                        {
+                            e.printStackTrace();
                         }
+
+
                         return null;
                     }
 
@@ -299,9 +346,9 @@ public class WebService extends Activity
                     {
                         super.onPostExecute(aVoid);
                         progressBarIsValid.setVisibility(View.GONE);
+
                         Random rand = new Random();
-                        //TODO: Change this when done talking to a server
-                        if(true)
+                        if(isValid)
                         {
                             imageViewValidMark.setBackgroundResource(R.drawable.check);
                             showPasswordUpload();
@@ -338,14 +385,13 @@ public class WebService extends Activity
         textViewUserID.setVisibility(View.VISIBLE);
 
         // Take a picture to register
-        // Also grab a newly generated public key from the Key Server
-        // TODO: talk to the key server
         btnTakePic.setOnClickListener(new View.OnClickListener()
         {
             @Override
             public void onClick(View view)
             {
                 // Start a background task to get a new public key
+                //TODO: Move this somewhere else
                 AsyncTask<Void, Void, Void> getPublicKey = new AsyncTask<Void, Void, Void>()
                 {
                     @Override
@@ -370,7 +416,7 @@ public class WebService extends Activity
                         // If this finishes after the camera encrypt the image
                         if(haveFV)
                         {
-                            encryptedFVLoc = encryptFV();
+                            encryptFV();
                         } else
                         {
                             haveKey = true;
@@ -432,7 +478,7 @@ public class WebService extends Activity
                 // If we have the key already then encrypt the image; otherwise, wait to get the public key
                 if(haveKey)
                 {
-                    encryptedFVLoc = encryptFV();
+                    encryptFV();
                 } else
                 {
                     haveFV = true;
@@ -465,7 +511,7 @@ public class WebService extends Activity
 
     // Encrypts the feature vector using paillier encryption
     // Outputs the feature vector to a separate file (till it's sent off)
-    private String encryptFV()
+    private void encryptFV()
     {
         encryptedFV = new BigInteger[featureVector.length];
 
@@ -475,43 +521,61 @@ public class WebService extends Activity
             encryptedFV[i] = paillier.Encryption(bigInt);
         }
 
-        // Write the ciphertext to a File
-        File outputDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES); // context being the Activity pointer
-        File outputFile = null;
-        try
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < encryptedFV.length; i++)
         {
-            outputFile = File.createTempFile("encryptedHistogram", ".txt", outputDir);
-        } catch (Exception e)
-        {
-            return null;
+            sb.append(encryptedFV[i]).append(" ");
         }
 
-        BufferedWriter writer = null;
-        try
+        AsyncTask<Void, Void, Void> addUserToDatabase = new AsyncTask<Void, Void, Void>()
         {
-            writer = new BufferedWriter(new FileWriter(outputFile.getAbsoluteFile()));
-            for (int i = 0; i < encryptedFV.length; i++)
+            boolean isValid = false;
+            @Override
+            protected Void doInBackground(Void... voids)
             {
-                writer.write(encryptedFV[i] + " ");
-            }
-        } catch (Exception e)
-        {
-            return null;
-        } finally
-        {
-            try
-            {
-                if (writer != null)
+                try
                 {
+                    URL url = new URL("http://131.151.8.33:3000/web_service_bank");
+                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                    urlConnection.setRequestMethod("POST");
+
+                    urlConnection.setRequestProperty("Content-Type", "application/json");
+                    urlConnection.setRequestProperty("Accept", "application/json");
+
+                    urlConnection.connect();
+
+                    JSONObject jObject = new JSONObject();
+                    jObject.accumulate("Name", userID);
+                    jObject.accumulate("Objective", "Add");
+                    jObject.accumulate("Password", sb.toString());
+
+                    String json = jObject.toString();
+
+                    OutputStream os = urlConnection.getOutputStream();
+                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                    writer.write(json);
+                    writer.flush();
+
                     writer.close();
+                    os.close();
+
+                    InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                    String response = convertStreamToString(is);
+                } catch(MalformedURLException e)
+                {
+                    e.printStackTrace();
+                } catch (IOException e)
+                {
+                    e.printStackTrace();
+                } catch (JSONException e)
+                {
+                    e.printStackTrace();
                 }
-            } catch (IOException e)
-            {
+
+
                 return null;
             }
-        }
-
-        return outputFile.getAbsolutePath();
+        }.execute();
     }
 
     // Checks if the username contains only valid characters
@@ -539,5 +603,26 @@ public class WebService extends Activity
         }
 
         return isGood;
+    }
+
+    private String convertStreamToString(InputStream is) {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+        StringBuilder sb = new StringBuilder();
+
+        String line = null;
+        try {
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                is.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return sb.toString();
     }
 }
