@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -13,7 +12,6 @@ import android.provider.MediaStore;
 import android.support.v4.content.FileProvider;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -33,7 +31,6 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -77,13 +74,15 @@ public class WebService extends Activity
     int[][] pixels;
     byte[][] featureVector;
     BigInteger[] encryptedFV;
-    Paillier paillier;
     boolean haveKey = false;
     boolean haveFV = false;
     String encryptedFVLoc;
     BigInteger[] publicKey;
     BigInteger[] privateKey;
-    HashMap<String, JSONObject> servicesMap;
+    HashMap<String, String> servicesMap;
+
+    TextView textViewLoginService;
+    TextView textViewLoginUserID;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -91,9 +90,9 @@ public class WebService extends Activity
         super.onCreate(savedInstanceState);
         Intent startIntent = getIntent();
 
-        switch(startIntent.getStringExtra(ServiceTask.START))
+        switch(startIntent.getStringExtra(IntentInfo.START))
         {
-            case ServiceTask.REGISTER:
+            case IntentInfo.REGISTER:
                 // Show that we are registering a service
                 setContentView(R.layout.select_service);
                 
@@ -118,6 +117,15 @@ public class WebService extends Activity
                 });
 
                 break;
+            case IntentInfo.LOGIN:
+                setContentView(R.layout.login_service);
+
+                // Get Views in this layout
+                textViewLoginService = (TextView)findViewById(R.id.textView_registered_service);
+                textViewLoginService.setText(startIntent.getStringExtra(IntentInfo.SERVICE_USERID).split(" - ")[0]);
+                textViewLoginUserID = (TextView)findViewById(R.id.textView_registered_userid);
+                textViewLoginUserID.setText(startIntent.getStringExtra(IntentInfo.SERVICE_USERID).split(" - ")[1]);
+                break;
         }
     }
 
@@ -125,7 +133,6 @@ public class WebService extends Activity
     private void getServicesList()
     {
         // Get this list from server (but don't show previously registered services)
-        // TODO: talk to an actual server
         servicesList = new ArrayList<>();
         servicesMap = new HashMap<>();
 
@@ -137,7 +144,7 @@ public class WebService extends Activity
             {
                 try
                 {
-                    URL url = new URL("http://131.151.8.33:3000/server_list");
+                    URL url = new URL("http://131.151.8.33:3000/uface_data/server_list");
                     HttpURLConnection urlConnection = (HttpURLConnection)url.openConnection();
                     urlConnection.setRequestMethod("GET");
 
@@ -159,7 +166,7 @@ public class WebService extends Activity
                     {
                         JSONObject service = jArray.getJSONObject(i);
                         servicesList.add(service.getString("Name"));
-                        servicesMap.put(service.getString("Name"), service);
+                        servicesMap.put(service.getString("Name"), service.getString("Url"));
                     }
 
                 } catch (MalformedURLException e)
@@ -180,6 +187,7 @@ public class WebService extends Activity
             protected void onPostExecute(Void aVoid)
             {
                 super.onPostExecute(aVoid);
+                Toast.makeText(getBaseContext(), "Got the services!", Toast.LENGTH_SHORT).show();
 
                 // TODO: Compare list from server to already registered services and don't show them
                 /*for(String service : servicesList)
@@ -283,7 +291,7 @@ public class WebService extends Activity
                     {
                         try
                         {
-                            URL url = new URL("http://131.151.8.33:3000/web_service_bank");
+                            URL url = new URL(servicesMap.get(serviceString)+"/validate_user");
                             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                             urlConnection.setRequestMethod("POST");
 
@@ -294,7 +302,6 @@ public class WebService extends Activity
 
                             JSONObject jObject = new JSONObject();
                             jObject.accumulate("Name", userID);
-                            jObject.accumulate("Objective", "Verify");
 
                             String json = jObject.toString();
 
@@ -350,6 +357,7 @@ public class WebService extends Activity
                         Random rand = new Random();
                         if(isValid)
                         {
+                            Toast.makeText(getBaseContext(), "ID is valid!", Toast.LENGTH_SHORT).show();
                             imageViewValidMark.setBackgroundResource(R.drawable.check);
                             showPasswordUpload();
                         }
@@ -390,40 +398,6 @@ public class WebService extends Activity
             @Override
             public void onClick(View view)
             {
-                // Start a background task to get a new public key
-                //TODO: Move this somewhere else
-                AsyncTask<Void, Void, Void> getPublicKey = new AsyncTask<Void, Void, Void>()
-                {
-                    @Override
-                    protected Void doInBackground(Void... params)
-                    {
-                        paillier = new Paillier("130608821557841900443360573990060231600720639068635884870756456142930941480804192983990854478613114648787582498011693243077173475850692956250017555398483238328099541842782019438340249031750695665874603477846790009046878241815288144729763574658057914680190158946544876393438515631155150484847668488183868105893",
-                                "8715161750352038003855234302887932079801138728954207932245027351191172517353630598400311130000817553939984622880281320389904272535238541835806448941586218917232876912910443137583132034235838974323100942032187813695301571205816522358575761111283034852749185254197245814808374803657021294470498798380881148553580717433731785726037233004579908831642460826767151249645068973275412116024906036803392245770242535027189122010103221811510344288569977102817252563630275153915092831480899329906091413418200391735742340524277988104603739915616826436232606625654946447897928406710231256856380521783511388678981419291024236658823",
-                                "65304410778920950221680286995030115800360319534317942435378228071465470740402096491995427239306557324393791249005846621538586737925346478125008777699241607680005207673965152353188838145624327895176457997361602266207450001402205712660875434148564101191018822712233348241627287112305993056373620460949250660454",
-                                "44434977212474549420262809225036713658433520993151896021541158481720504859866799959494127361520327480145280505284544157413674629448437900830766576437226947299954992686129603112736407528759331072466437778674243883296282585308483025725199281344730934149325912450292620111994432444297320422768672241197675832052",
-                                "1024");
-                        publicKey = paillier.getPublicKey();
-                        privateKey = paillier.getPrivateKey();
-
-                        return null;
-                    }
-
-                    @Override
-                    protected void onPostExecute(Void aVoid)
-                    {
-                        super.onPostExecute(aVoid);
-
-                        // If this finishes after the camera encrypt the image
-                        if(haveFV)
-                        {
-                            encryptFV();
-                        } else
-                        {
-                            haveKey = true;
-                        }
-                    }
-                }.execute();
-
                 Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                 // Ensure that there's a camera activity to handle the intent
                 if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
@@ -475,14 +449,7 @@ public class WebService extends Activity
                 pixels = ImageTransform.setGridPixelMap(gBitmap);
                 featureVector = LBP.generateFeatureVector(pixels);
 
-                // If we have the key already then encrypt the image; otherwise, wait to get the public key
-                if(haveKey)
-                {
-                    encryptFV();
-                } else
-                {
-                    haveFV = true;
-                }
+                encryptFV();
             }
             else
             {
@@ -518,7 +485,7 @@ public class WebService extends Activity
         for(int i = 0; i < featureVector.length; i++)
         {
             BigInteger bigInt = new BigInteger(featureVector[i]);
-            encryptedFV[i] = paillier.Encryption(bigInt);
+            encryptedFV[i] = MainActivity.paillier.Encryption(bigInt);
         }
 
         final StringBuilder sb = new StringBuilder();
@@ -527,7 +494,7 @@ public class WebService extends Activity
             sb.append(encryptedFV[i]).append(" ");
         }
 
-        AsyncTask<Void, Void, Void> addUserToDatabase = new AsyncTask<Void, Void, Void>()
+        AsyncTask<Void, Void, Void> addAddressForUser = new AsyncTask<Void, Void, Void>()
         {
             boolean isValid = false;
             @Override
@@ -535,7 +502,7 @@ public class WebService extends Activity
             {
                 try
                 {
-                    URL url = new URL("http://131.151.8.33:3000/web_service_bank");
+                    URL url = new URL("http://131.151.8.33:3000/web_service_bank/add_user");
                     HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                     urlConnection.setRequestMethod("POST");
 
@@ -546,7 +513,60 @@ public class WebService extends Activity
 
                     JSONObject jObject = new JSONObject();
                     jObject.accumulate("Name", userID);
-                    jObject.accumulate("Objective", "Add");
+
+                    String json = jObject.toString();
+
+                    OutputStream os = urlConnection.getOutputStream();
+                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                    writer.write(json);
+                    writer.flush();
+
+                    writer.close();
+                    os.close();
+
+                    InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                    String response = convertStreamToString(is);
+                } catch(MalformedURLException e)
+                {
+                    e.printStackTrace();
+                } catch (IOException e)
+                {
+                    e.printStackTrace();
+                } catch (JSONException e)
+                {
+                    e.printStackTrace();
+                }
+
+
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(Void aVoid)
+            {
+                super.onPostExecute(aVoid);
+                Toast.makeText(getBaseContext(), "User was added!", Toast.LENGTH_SHORT).show();
+            }
+        }.execute();
+
+        AsyncTask<Void, Void, Void> addPasswordToDatabase = new AsyncTask<Void, Void, Void>()
+        {
+            boolean isValid = false;
+            @Override
+            protected Void doInBackground(Void... voids)
+            {
+                try
+                {
+                    URL url = new URL("http://131.151.8.33:3000/uface_data/add_password");
+                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                    urlConnection.setRequestMethod("POST");
+
+                    urlConnection.setRequestProperty("Content-Type", "application/json");
+                    urlConnection.setRequestProperty("Accept", "application/json");
+
+                    urlConnection.connect();
+
+                    JSONObject jObject = new JSONObject();
                     jObject.accumulate("Password", sb.toString());
 
                     String json = jObject.toString();
@@ -575,7 +595,20 @@ public class WebService extends Activity
 
                 return null;
             }
+
+            @Override
+            protected void onPostExecute(Void aVoid)
+            {
+                super.onPostExecute(aVoid);
+                Toast.makeText(getBaseContext(), "Password was uploaded!", Toast.LENGTH_SHORT).show();
+            }
         }.execute();
+
+        Intent doneRegistering = new Intent();
+        doneRegistering.putExtra(IntentInfo.SELECTION, serviceString);
+        doneRegistering.putExtra(IntentInfo.USERID, userID);
+        setResult(Activity.RESULT_OK, doneRegistering);
+        finish();
     }
 
     // Checks if the username contains only valid characters

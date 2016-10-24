@@ -2,6 +2,7 @@ package com.stuff.nsh9b3.uface;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
@@ -10,12 +11,22 @@ import android.widget.GridView;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 
 public class MainActivity extends Activity implements View.OnClickListener
 {
     // Intent IDs
-    private final static int NEW_SERVICE_INTENT = 1;
+    public final static int NEW_SERVICE_INTENT = 1;
+    public final static int LOGIN_SERVICE_INTENT = 2;
 
     // List of Buttons (services) a user can select
     public ArrayList<Button> buttonList;
@@ -27,6 +38,9 @@ public class MainActivity extends Activity implements View.OnClickListener
     private final static int btnIDOffset = 1000;
     private final static int layIDOffset = 100;
 
+    // Paillier encrption public key information
+    public static Paillier paillier;
+
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
@@ -36,6 +50,58 @@ public class MainActivity extends Activity implements View.OnClickListener
         // Get the add button and set the listener to this activity (which is a clickListener)
         Button addButton = (Button)findViewById(R.id.btn_add);
         addButton.setOnClickListener(this);
+
+        // Start a background task to get a new public key
+        AsyncTask<Void, Void, Void> getPublicKey = new AsyncTask<Void, Void, Void>()
+        {
+            @Override
+            protected Void doInBackground(Void... params)
+            {
+                try
+                {
+                    URL url = new URL("http://131.151.8.33:3000/uface_key/public_key");
+                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                    urlConnection.setRequestMethod("GET");
+
+                    urlConnection.connect();
+
+                    BufferedReader br = new BufferedReader(new InputStreamReader(urlConnection.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        sb.append(line+"\n");
+                    }
+                    br.close();
+
+                    String result = sb.toString().replaceAll("\\\\", "");
+                    result = result.substring(1, result.length() - 2);
+                    JSONObject jObject = new JSONObject(result);
+                    String[] public_key = jObject.getString("Public").split(" ");
+
+                    paillier = new Paillier(public_key[0], public_key[1], public_key[2]);
+
+                } catch (MalformedURLException e)
+                {
+                    e.printStackTrace();
+                } catch (IOException e)
+                {
+                    e.printStackTrace();
+                } catch (JSONException e)
+                {
+                    e.printStackTrace();
+                }
+
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(Void aVoid)
+            {
+                super.onPostExecute(aVoid);
+                Toast.makeText(getBaseContext(), "Got the public key!", Toast.LENGTH_SHORT).show();
+            }
+
+        }.execute();
 
         // Gets the list of buttons and layouts
         getServices();
@@ -52,16 +118,17 @@ public class MainActivity extends Activity implements View.OnClickListener
             // Register a new service
             case R.id.btn_add:
                 Intent newServiceIntent = new Intent(this, WebService.class);
-                newServiceIntent.putExtra(ServiceTask.START, ServiceTask.REGISTER);
+                newServiceIntent.putExtra(IntentInfo.START, IntentInfo.REGISTER);
                 startActivityForResult(newServiceIntent, NEW_SERVICE_INTENT);
                 break;
             // If any other button was pressed (the rest are all services)
             // Authenticate a created service
             default:
-                // TODO: something other than nothing
                 Button pressedButton = (Button)view;
                 Intent selectServiceIntent = new Intent(this, WebService.class);
-                Toast.makeText(this, ((Button) view).getText().toString(), Toast.LENGTH_SHORT).show();
+                selectServiceIntent.putExtra(IntentInfo.START, IntentInfo.LOGIN);
+                selectServiceIntent.putExtra(IntentInfo.SERVICE_USERID, pressedButton.getText());
+                startActivityForResult(selectServiceIntent, LOGIN_SERVICE_INTENT);
                 break;
         }
     }
@@ -75,35 +142,33 @@ public class MainActivity extends Activity implements View.OnClickListener
         // If we created a new service
         if(requestCode == NEW_SERVICE_INTENT)
         {
-            // And everything went okay
-            if(resultCode == Activity.RESULT_OK)
+            if(data == null)
             {
+                Toast.makeText(this, "No Service Registered with!", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
-                boolean createdService = false;
-                String serviceName = data.getStringExtra(ServiceTask.SELECTION);
-                for(Button btn : buttonList)
+            boolean createdService = false;
+            String serviceName = data.getStringExtra(IntentInfo.SELECTION);
+            String userID = data.getStringExtra(IntentInfo.USERID);
+            for(Button btn : buttonList)
+            {
+                if(btn.getText().toString().compareTo(serviceName) == 0)
                 {
-                    if(btn.getText().toString().compareTo(serviceName) == 0)
-                    {
-                        createdService = true;
-                        break;
-                    }
+                    createdService = true;
+                    break;
                 }
-                if(!createdService)
-                {
-                    makeNewServiceIcon(data.getStringExtra(ServiceTask.SELECTION));
-                }
-                else
-                    Toast.makeText(this, "You've already registered with this service", Toast.LENGTH_SHORT).show();
+            }
+            if(!createdService)
+            {
+                makeNewServiceIcon(serviceName, userID);
             }
             else
-            {
-                // Back was pressed and no service was selected
-            }
+                Toast.makeText(this, "You've already registered with this service", Toast.LENGTH_SHORT).show();
         }
     }
 
-    private void makeNewServiceIcon(String serviceName)
+    private void makeNewServiceIcon(String serviceName, String userID)
     {
         LinearLayout parentLayout = (LinearLayout)findViewById(R.id.parent_ll);
 
@@ -145,7 +210,7 @@ public class MainActivity extends Activity implements View.OnClickListener
         btnParams.weight = 1;
 
         newServiceBtn.setLayoutParams(btnParams);
-        newServiceBtn.setText(serviceName);
+        newServiceBtn.setText(serviceName + " - " + userID);
         newServiceBtn.setId(buttonList.size() + btnIDOffset);
         newServiceBtn.setOnClickListener(this);
 
