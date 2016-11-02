@@ -1,10 +1,13 @@
 package com.stuff.nsh9b3.uface;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
@@ -12,6 +15,7 @@ import android.provider.MediaStore;
 import android.support.v4.content.FileProvider;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.text.format.Formatter;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -144,7 +148,7 @@ public class WebService extends Activity
             {
                 try
                 {
-                    URL url = new URL("http://131.151.8.33:3000/uface_data/server_list");
+                    URL url = new URL("http://10.106.70.238:3000/service_list");
                     HttpURLConnection urlConnection = (HttpURLConnection)url.openConnection();
                     urlConnection.setRequestMethod("GET");
 
@@ -291,7 +295,7 @@ public class WebService extends Activity
                     {
                         try
                         {
-                            URL url = new URL(servicesMap.get(serviceString)+"/validate_user");
+                            URL url = new URL(servicesMap.get(serviceString)+"add_user/");
                             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                             urlConnection.setRequestMethod("POST");
 
@@ -302,6 +306,12 @@ public class WebService extends Activity
 
                             JSONObject jObject = new JSONObject();
                             jObject.accumulate("Name", userID);
+                            jObject.accumulate("Service", serviceString);
+                            WifiManager wifiMan = (WifiManager) getBaseContext().getSystemService(Context.WIFI_SERVICE);
+                            WifiInfo wifiInf = wifiMan.getConnectionInfo();
+                            int ipAddress = wifiInf.getIpAddress();
+                            String ip = String.format("%d.%d.%d.%d", (ipAddress & 0xff),(ipAddress >> 8 & 0xff),(ipAddress >> 16 & 0xff),(ipAddress >> 24 & 0xff));
+                            jObject.accumulate("IP", ip);
 
                             String json = jObject.toString();
 

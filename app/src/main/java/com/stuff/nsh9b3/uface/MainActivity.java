@@ -59,7 +59,7 @@ public class MainActivity extends Activity implements View.OnClickListener
             {
                 try
                 {
-                    URL url = new URL("http://131.151.8.33:3000/uface_key/public_key");
+                    URL url = new URL("http://localhost:3002/public_key");
                     HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                     urlConnection.setRequestMethod("GET");
 
@@ -98,7 +98,10 @@ public class MainActivity extends Activity implements View.OnClickListener
             protected void onPostExecute(Void aVoid)
             {
                 super.onPostExecute(aVoid);
-                Toast.makeText(getBaseContext(), "Got the public key!", Toast.LENGTH_SHORT).show();
+                if(paillier != null)
+                    Toast.makeText(getBaseContext(), "Got the public key!", Toast.LENGTH_SHORT).show();
+                else
+                    Toast.makeText(getBaseContext(), "Could not get the public key!", Toast.LENGTH_SHORT).show();
             }
 
         }.execute();
