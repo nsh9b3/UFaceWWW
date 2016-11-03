@@ -55,6 +55,7 @@ import java.util.regex.Pattern;
 public class WebService extends Activity
 {
     static final int REQUEST_TAKE_PHOTO = 1;
+    static final int REQUEST_AUTH_PHOTO = 2;
     String mCurrentPhotoPath;
 
 
@@ -84,15 +85,21 @@ public class WebService extends Activity
     BigInteger[] publicKey;
     BigInteger[] privateKey;
     HashMap<String, String> servicesMap;
+    String address;
 
     TextView textViewLoginService;
     TextView textViewLoginUserID;
+    Button btnAuthUser;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
         Intent startIntent = getIntent();
+
+        WifiManager manager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+        WifiInfo info = manager.getConnectionInfo();
+        address = info.getMacAddress();
 
         switch(startIntent.getStringExtra(IntentInfo.START))
         {
@@ -123,12 +130,49 @@ public class WebService extends Activity
                 break;
             case IntentInfo.LOGIN:
                 setContentView(R.layout.login_service);
+                String authenticationInfo = startIntent.getStringExtra(IntentInfo.SERVICE_USERID);
+                serviceString = authenticationInfo.split(" - ")[0];
+                userID = authenticationInfo.split(" - ")[1];
 
                 // Get Views in this layout
                 textViewLoginService = (TextView)findViewById(R.id.textView_registered_service);
-                textViewLoginService.setText(startIntent.getStringExtra(IntentInfo.SERVICE_USERID).split(" - ")[0]);
+                textViewLoginService.setText(authenticationInfo.split(" - ")[0]);
                 textViewLoginUserID = (TextView)findViewById(R.id.textView_registered_userid);
-                textViewLoginUserID.setText(startIntent.getStringExtra(IntentInfo.SERVICE_USERID).split(" - ")[1]);
+                textViewLoginUserID.setText(authenticationInfo.split(" - ")[1]);
+                btnAuthUser = (Button)findViewById(R.id.button_authenticate_user);
+
+                // Take a picture to register
+                btnAuthUser.setOnClickListener(new View.OnClickListener()
+                {
+                    @Override
+                    public void onClick(View view)
+                    {
+                    Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                    // Ensure that there's a camera activity to handle the intent
+                    if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
+                        // Create the File where the photo should go
+                        File photoFile = null;
+                        try
+                        {
+                            photoFile = createImageFile();
+                        } catch (IOException ex) {
+                            // Error occurred while creating the File
+                        }
+
+                        // Continue only if the File was successfully created
+                        if (photoFile.exists())
+                        {
+                            // Take a picture and place the information in the newly created file
+                            Uri photoURI = FileProvider.getUriForFile(getApplicationContext(),
+                                    "com.stuff.nsh9b3.uface.fileprovider",
+                                    photoFile);
+                            takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
+                            startActivityForResult(takePictureIntent, REQUEST_AUTH_PHOTO);
+                        }
+                    }
+
+                    }
+                });
                 break;
         }
     }
@@ -148,7 +192,7 @@ public class WebService extends Activity
             {
                 try
                 {
-                    URL url = new URL("http://10.106.70.238:3000/service_list");
+                    URL url = new URL("http://" + MainActivity.address + ":3000/service_list");
                     HttpURLConnection urlConnection = (HttpURLConnection)url.openConnection();
                     urlConnection.setRequestMethod("GET");
 
@@ -290,6 +334,7 @@ public class WebService extends Activity
                 AsyncTask<Void, Void, Void> checkValidName = new AsyncTask<Void, Void, Void>()
                 {
                     boolean isValid = false;
+                    String message = "";
                     @Override
                     protected Void doInBackground(Void... voids)
                     {
@@ -305,13 +350,12 @@ public class WebService extends Activity
                             urlConnection.connect();
 
                             JSONObject jObject = new JSONObject();
-                            jObject.accumulate("Name", userID);
+                            jObject.accumulate("User", userID);
                             jObject.accumulate("Service", serviceString);
-                            WifiManager wifiMan = (WifiManager) getBaseContext().getSystemService(Context.WIFI_SERVICE);
-                            WifiInfo wifiInf = wifiMan.getConnectionInfo();
-                            int ipAddress = wifiInf.getIpAddress();
-                            String ip = String.format("%d.%d.%d.%d", (ipAddress & 0xff),(ipAddress >> 8 & 0xff),(ipAddress >> 16 & 0xff),(ipAddress >> 24 & 0xff));
-                            jObject.accumulate("IP", ip);
+                            WifiManager manager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+                            WifiInfo info = manager.getConnectionInfo();
+                            String address = info.getMacAddress();
+                            jObject.accumulate("IP", address);
 
                             String json = jObject.toString();
 
@@ -324,8 +368,12 @@ public class WebService extends Activity
                             os.close();
 
                             InputStream is = new BufferedInputStream(urlConnection.getInputStream());
-                            String response = convertStreamToString(is);
-                            if(response.compareTo("true\n") == 0)
+                            String response = convertStreamToString(is).replaceAll("\\\\", "");
+                            response = response.substring(1, response.length() - 2);
+                            JSONObject jResponse = new JSONObject(response);
+                            message = jResponse.getString("Message");
+
+                            if(jResponse.getBoolean("Result"))
                             {
                                 isValid = true;
                             }
@@ -367,14 +415,14 @@ public class WebService extends Activity
                         Random rand = new Random();
                         if(isValid)
                         {
-                            Toast.makeText(getBaseContext(), "ID is valid!", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
                             imageViewValidMark.setBackgroundResource(R.drawable.check);
                             showPasswordUpload();
                         }
                         else
                         {
                             imageViewValidMark.setBackgroundResource(R.drawable.close);
-                            Toast.makeText(getApplicationContext(), "This ID has already been used for registration. Please pick another.", Toast.LENGTH_LONG).show();
+                            Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
                         }
                         imageViewValidMark.setVisibility(View.VISIBLE);
                         acceptUserID = true;
@@ -447,6 +495,7 @@ public class WebService extends Activity
             // If no errors happened
             if(resultCode == Activity.RESULT_OK)
             {
+
                 // Get the image and turn it to grayscale
                 File file = new File(mCurrentPhotoPath);
                 gBitmap = ImageTransform.toGrayscale(BitmapFactory.decodeFile(mCurrentPhotoPath));
@@ -459,7 +508,155 @@ public class WebService extends Activity
                 pixels = ImageTransform.setGridPixelMap(gBitmap);
                 featureVector = LBP.generateFeatureVector(pixels);
 
-                encryptFV();
+                final String password = encryptFV();
+
+                AsyncTask<Void, Void, Void> addPasswordToDatabase = new AsyncTask<Void, Void, Void>()
+                {
+                    boolean isValid = false;
+                    @Override
+                    protected Void doInBackground(Void... voids)
+                    {
+                        try
+                        {
+                            URL url = new URL("http://" + MainActivity.address + ":3000/passwords/add_password");
+                            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                            urlConnection.setRequestMethod("POST");
+
+                            urlConnection.setRequestProperty("Content-Type", "application/json");
+                            urlConnection.setRequestProperty("Accept", "application/json");
+
+                            urlConnection.connect();
+
+                            JSONObject jObject = new JSONObject();
+                            jObject.accumulate("Password", password);
+                            jObject.accumulate("Service", serviceString);
+                            jObject.accumulate("IP", address);
+
+                            String json = jObject.toString();
+
+                            OutputStream os = urlConnection.getOutputStream();
+                            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                            writer.write(json);
+                            writer.flush();
+
+                            writer.close();
+                            os.close();
+
+                            InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                            String response = convertStreamToString(is);
+                        } catch(MalformedURLException e)
+                        {
+                            e.printStackTrace();
+                        } catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        } catch (JSONException e)
+                        {
+                            e.printStackTrace();
+                        }
+
+
+                        return null;
+                    }
+
+                    @Override
+                    protected void onPostExecute(Void aVoid)
+                    {
+                        super.onPostExecute(aVoid);
+                        Toast.makeText(getBaseContext(), "Password was uploaded!", Toast.LENGTH_SHORT).show();
+                    }
+                }.execute();
+
+                Intent doneRegistering = new Intent();
+                doneRegistering.putExtra(IntentInfo.SELECTION, serviceString);
+                doneRegistering.putExtra(IntentInfo.USERID, userID);
+                setResult(Activity.RESULT_OK, doneRegistering);
+                finish();
+            }
+            else
+            {
+                // Back was pressed and no picture was taken
+                Toast.makeText(this, "This service hasn't been registered. Please take a selfie.", Toast.LENGTH_LONG).show();
+            }
+        }
+        // If we are returning from taking a picture
+        else if(requestCode == REQUEST_AUTH_PHOTO)
+        {
+            // If no errors happened
+            if(resultCode == Activity.RESULT_OK)
+            {
+
+                // Get the image and turn it to grayscale
+                File file = new File(mCurrentPhotoPath);
+                gBitmap = ImageTransform.toGrayscale(BitmapFactory.decodeFile(mCurrentPhotoPath));
+
+                // Then delete the file
+                file.delete();
+                mCurrentPhotoPath = "";
+
+                // Get the feature vector of this image
+                pixels = ImageTransform.setGridPixelMap(gBitmap);
+                featureVector = LBP.generateFeatureVector(pixels);
+
+                final String testPassword = encryptFV();
+
+                AsyncTask<Void, Void, Void> addPasswordToDatabase = new AsyncTask<Void, Void, Void>()
+                {
+                    boolean isValid = false;
+                    @Override
+                    protected Void doInBackground(Void... voids)
+                    {
+                        try
+                        {
+                            URL url = new URL("http://" + MainActivity.address + ":3000/passwords/authenticate_password");
+                            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                            urlConnection.setRequestMethod("POST");
+
+                            urlConnection.setRequestProperty("Content-Type", "application/json");
+                            urlConnection.setRequestProperty("Accept", "application/json");
+
+                            urlConnection.connect();
+
+                            JSONObject jObject = new JSONObject();
+                            jObject.accumulate("Password", testPassword);
+                            jObject.accumulate("Service", serviceString);
+                            jObject.accumulate("IP", address);
+
+                            String json = jObject.toString();
+
+                            OutputStream os = urlConnection.getOutputStream();
+                            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                            writer.write(json);
+                            writer.flush();
+
+                            writer.close();
+                            os.close();
+
+                            InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                            String response = convertStreamToString(is);
+                        } catch(MalformedURLException e)
+                        {
+                            e.printStackTrace();
+                        } catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        } catch (JSONException e)
+                        {
+                            e.printStackTrace();
+                        }
+
+
+                        return null;
+                    }
+
+                    @Override
+                    protected void onPostExecute(Void aVoid)
+                    {
+                        super.onPostExecute(aVoid);
+                        Toast.makeText(getBaseContext(), "Password was uploaded!", Toast.LENGTH_SHORT).show();
+                    }
+                }.execute();
+
             }
             else
             {
@@ -488,7 +685,7 @@ public class WebService extends Activity
 
     // Encrypts the feature vector using paillier encryption
     // Outputs the feature vector to a separate file (till it's sent off)
-    private void encryptFV()
+    private String encryptFV()
     {
         encryptedFV = new BigInteger[featureVector.length];
 
@@ -504,121 +701,7 @@ public class WebService extends Activity
             sb.append(encryptedFV[i]).append(" ");
         }
 
-        AsyncTask<Void, Void, Void> addAddressForUser = new AsyncTask<Void, Void, Void>()
-        {
-            boolean isValid = false;
-            @Override
-            protected Void doInBackground(Void... voids)
-            {
-                try
-                {
-                    URL url = new URL("http://131.151.8.33:3000/web_service_bank/add_user");
-                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
-                    urlConnection.setRequestMethod("POST");
-
-                    urlConnection.setRequestProperty("Content-Type", "application/json");
-                    urlConnection.setRequestProperty("Accept", "application/json");
-
-                    urlConnection.connect();
-
-                    JSONObject jObject = new JSONObject();
-                    jObject.accumulate("Name", userID);
-
-                    String json = jObject.toString();
-
-                    OutputStream os = urlConnection.getOutputStream();
-                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
-                    writer.write(json);
-                    writer.flush();
-
-                    writer.close();
-                    os.close();
-
-                    InputStream is = new BufferedInputStream(urlConnection.getInputStream());
-                    String response = convertStreamToString(is);
-                } catch(MalformedURLException e)
-                {
-                    e.printStackTrace();
-                } catch (IOException e)
-                {
-                    e.printStackTrace();
-                } catch (JSONException e)
-                {
-                    e.printStackTrace();
-                }
-
-
-                return null;
-            }
-
-            @Override
-            protected void onPostExecute(Void aVoid)
-            {
-                super.onPostExecute(aVoid);
-                Toast.makeText(getBaseContext(), "User was added!", Toast.LENGTH_SHORT).show();
-            }
-        }.execute();
-
-        AsyncTask<Void, Void, Void> addPasswordToDatabase = new AsyncTask<Void, Void, Void>()
-        {
-            boolean isValid = false;
-            @Override
-            protected Void doInBackground(Void... voids)
-            {
-                try
-                {
-                    URL url = new URL("http://131.151.8.33:3000/uface_data/add_password");
-                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
-                    urlConnection.setRequestMethod("POST");
-
-                    urlConnection.setRequestProperty("Content-Type", "application/json");
-                    urlConnection.setRequestProperty("Accept", "application/json");
-
-                    urlConnection.connect();
-
-                    JSONObject jObject = new JSONObject();
-                    jObject.accumulate("Password", sb.toString());
-
-                    String json = jObject.toString();
-
-                    OutputStream os = urlConnection.getOutputStream();
-                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
-                    writer.write(json);
-                    writer.flush();
-
-                    writer.close();
-                    os.close();
-
-                    InputStream is = new BufferedInputStream(urlConnection.getInputStream());
-                    String response = convertStreamToString(is);
-                } catch(MalformedURLException e)
-                {
-                    e.printStackTrace();
-                } catch (IOException e)
-                {
-                    e.printStackTrace();
-                } catch (JSONException e)
-                {
-                    e.printStackTrace();
-                }
-
-
-                return null;
-            }
-
-            @Override
-            protected void onPostExecute(Void aVoid)
-            {
-                super.onPostExecute(aVoid);
-                Toast.makeText(getBaseContext(), "Password was uploaded!", Toast.LENGTH_SHORT).show();
-            }
-        }.execute();
-
-        Intent doneRegistering = new Intent();
-        doneRegistering.putExtra(IntentInfo.SELECTION, serviceString);
-        doneRegistering.putExtra(IntentInfo.USERID, userID);
-        setResult(Activity.RESULT_OK, doneRegistering);
-        finish();
+        return sb.toString();
     }
 
     // Checks if the username contains only valid characters

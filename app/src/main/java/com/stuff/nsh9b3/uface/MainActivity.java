@@ -41,6 +41,9 @@ public class MainActivity extends Activity implements View.OnClickListener
     // Paillier encrption public key information
     public static Paillier paillier;
 
+    // Base Address for servers
+    public static String address = "192.168.0.5";
+
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
@@ -59,7 +62,7 @@ public class MainActivity extends Activity implements View.OnClickListener
             {
                 try
                 {
-                    URL url = new URL("http://localhost:3002/public_key");
+                    URL url = new URL("http://" + address + ":3002/public_key");
                     HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                     urlConnection.setRequestMethod("GET");
 
@@ -74,11 +77,10 @@ public class MainActivity extends Activity implements View.OnClickListener
                     br.close();
 
                     String result = sb.toString().replaceAll("\\\\", "");
-                    result = result.substring(1, result.length() - 2);
                     JSONObject jObject = new JSONObject(result);
-                    String[] public_key = jObject.getString("Public").split(" ");
+                    JSONObject public_key = jObject.getJSONObject("Public");
 
-                    paillier = new Paillier(public_key[0], public_key[1], public_key[2]);
+                    paillier = new Paillier(public_key.getString("n"), public_key.getString("g"), public_key.getString("size"));
 
                 } catch (MalformedURLException e)
                 {
