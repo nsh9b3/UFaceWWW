@@ -42,7 +42,8 @@ public class MainActivity extends Activity implements View.OnClickListener
     public static Paillier paillier;
 
     // Base Address for servers
-    public static String address = "192.168.0.5";
+    // This will need to change as soon as the servers stop changing
+    public static String address = "10.106.70.18";
 
     @Override
     protected void onCreate(Bundle savedInstanceState)

@@ -134,6 +134,7 @@ public class WebService extends Activity
                 serviceString = authenticationInfo.split(" - ")[0];
                 userID = authenticationInfo.split(" - ")[1];
 
+
                 // Get Views in this layout
                 textViewLoginService = (TextView)findViewById(R.id.textView_registered_service);
                 textViewLoginService.setText(authenticationInfo.split(" - ")[0]);
@@ -147,6 +148,82 @@ public class WebService extends Activity
                     @Override
                     public void onClick(View view)
                     {
+                        // Used to check the Web Service if the name is valid
+                        AsyncTask<Void, Void, Void> checkValidName = new AsyncTask<Void, Void, Void>()
+                        {
+                            boolean isValid = false;
+                            String message = "";
+                            @Override
+                            protected Void doInBackground(Void... voids)
+                            {
+                                try
+                                {
+                                    URL url = new URL("http://10.106.70.18:3001/authenticate_user/");
+                                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                                    urlConnection.setRequestMethod("POST");
+
+                                    urlConnection.setRequestProperty("Content-Type", "application/json");
+                                    urlConnection.setRequestProperty("Accept", "application/json");
+
+                                    urlConnection.connect();
+
+                                    JSONObject jObject = new JSONObject();
+                                    jObject.accumulate("User", userID);
+                                    jObject.accumulate("Service", serviceString);
+                                    WifiManager manager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+                                    WifiInfo info = manager.getConnectionInfo();
+                                    String address = info.getMacAddress();
+                                    jObject.accumulate("IP", address);
+
+                                    String json = jObject.toString();
+
+                                    OutputStream os = urlConnection.getOutputStream();
+                                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                                    writer.write(json);
+                                    writer.flush();
+
+                                    writer.close();
+                                    os.close();
+
+                                    InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                                    String response = convertStreamToString(is).replaceAll("\\\\", "");
+                                    response = response.substring(1, response.length() - 2);
+                                    JSONObject jResponse = new JSONObject(response);
+                                    message = jResponse.getString("Message");
+
+                                } catch(MalformedURLException e)
+                                {
+                                    e.printStackTrace();
+                                } catch (IOException e)
+                                {
+                                    e.printStackTrace();
+                                } catch (JSONException e)
+                                {
+                                    e.printStackTrace();
+                                }
+
+
+                                return null;
+                            }
+
+                            @Override
+                            protected void onPostExecute(Void aVoid)
+                            {
+                                super.onPostExecute(aVoid);
+
+                                Random rand = new Random();
+                                if(isValid)
+                                {
+                                    Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                                }
+                                else
+                                {
+                                    Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
+                                }
+                            }
+                        }.execute();
+
+
                     Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                     // Ensure that there's a camera activity to handle the intent
                     if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
