@@ -16,6 +16,7 @@ import android.support.v4.content.FileProvider;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.text.format.Formatter;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -52,6 +53,9 @@ import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static android.R.attr.button;
+import static java.lang.Integer.parseInt;
+
 public class WebService extends Activity
 {
     static final int REQUEST_TAKE_PHOTO = 1;
@@ -85,7 +89,9 @@ public class WebService extends Activity
     BigInteger[] publicKey;
     BigInteger[] privateKey;
     HashMap<String, String> servicesMap;
-    String address;
+    int index = -1;
+    int pixelCount = -1;
+    private Thread worker;
 
     TextView textViewLoginService;
     TextView textViewLoginUserID;
@@ -99,7 +105,6 @@ public class WebService extends Activity
 
         WifiManager manager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
         WifiInfo info = manager.getConnectionInfo();
-        address = info.getMacAddress();
 
         switch(startIntent.getStringExtra(IntentInfo.START))
         {
@@ -133,6 +138,7 @@ public class WebService extends Activity
                 String authenticationInfo = startIntent.getStringExtra(IntentInfo.SERVICE_USERID);
                 serviceString = authenticationInfo.split(" - ")[0];
                 userID = authenticationInfo.split(" - ")[1];
+                index = parseInt(authenticationInfo.split(" - ")[2]);
 
 
                 // Get Views in this layout
@@ -170,11 +176,6 @@ public class WebService extends Activity
                                     JSONObject jObject = new JSONObject();
                                     jObject.accumulate("User", userID);
                                     jObject.accumulate("Service", serviceString);
-                                    WifiManager manager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-                                    WifiInfo info = manager.getConnectionInfo();
-                                    String address = info.getMacAddress();
-                                    jObject.accumulate("IP", address);
-
                                     String json = jObject.toString();
 
                                     OutputStream os = urlConnection.getOutputStream();
@@ -312,13 +313,29 @@ public class WebService extends Activity
             protected void onPostExecute(Void aVoid)
             {
                 super.onPostExecute(aVoid);
-                Toast.makeText(getBaseContext(), "Got the services!", Toast.LENGTH_SHORT).show();
-
-                // TODO: Compare list from server to already registered services and don't show them
-                /*for(String service : servicesList)
+                // Compare list from server to already registered services and don't show them
+                ArrayList<String> removeList = new ArrayList<String>();
+                for(String service : servicesList)
                 {
+                    for(Button button : MainActivity.buttonList)
+                        if(service.compareTo(button.getText().toString().split(" - ")[0]) == 0)
+                        {
+                            removeList.add(service);
+                        }
+                }
+                for(String remove : removeList)
+                {
+                    servicesList.remove(servicesList.indexOf(remove));
+                }
 
-                }*/
+                if(servicesList.size() == 0)
+                {
+                    Toast.makeText(getBaseContext(), "There are no new services!", Toast.LENGTH_SHORT).show();
+                }
+                else
+                {
+                    Toast.makeText(getBaseContext(), "Got the services!", Toast.LENGTH_SHORT).show();
+                }
 
                 // Show Services to User
                 servicesAdapter = new ArrayAdapter(getBaseContext(), android.R.layout.simple_list_item_1, servicesList);
@@ -429,10 +446,6 @@ public class WebService extends Activity
                             JSONObject jObject = new JSONObject();
                             jObject.accumulate("User", userID);
                             jObject.accumulate("Service", serviceString);
-                            WifiManager manager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-                            WifiInfo info = manager.getConnectionInfo();
-                            String address = info.getMacAddress();
-                            jObject.accumulate("IP", address);
 
                             String json = jObject.toString();
 
@@ -449,6 +462,7 @@ public class WebService extends Activity
                             response = response.substring(1, response.length() - 2);
                             JSONObject jResponse = new JSONObject(response);
                             message = jResponse.getString("Message");
+                            index = jResponse.getInt("Index");
 
                             if(jResponse.getBoolean("Result"))
                             {
@@ -500,6 +514,10 @@ public class WebService extends Activity
                         {
                             imageViewValidMark.setBackgroundResource(R.drawable.close);
                             Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
+                            btnTakePic.setVisibility(View.GONE);
+                            textViewUserID.setVisibility(View.GONE);
+                            textViewLabelUserId.setVisibility(View.GONE);
+                            imageViewValidMark.setVisibility(View.GONE);
                         }
                         imageViewValidMark.setVisibility(View.VISIBLE);
                         acceptUserID = true;
@@ -583,19 +601,21 @@ public class WebService extends Activity
 
                 // Get the feature vector of this image
                 pixels = ImageTransform.setGridPixelMap(gBitmap);
+                pixelCount = pixels.length * pixels[0].length;
                 featureVector = LBP.generateFeatureVector(pixels);
 
                 final String password = encryptFV();
 
-                AsyncTask<Void, Void, Void> addPasswordToDatabase = new AsyncTask<Void, Void, Void>()
+                final AsyncTask<Void, Void, Void> getOkayFromServiceAdd = new AsyncTask<Void, Void, Void>()
                 {
+                    String message = "";
                     boolean isValid = false;
                     @Override
                     protected Void doInBackground(Void... voids)
                     {
                         try
                         {
-                            URL url = new URL("http://" + MainActivity.address + ":3000/passwords/add_password");
+                            URL url = new URL(servicesMap.get(serviceString)+"add_user/result_client");
                             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                             urlConnection.setRequestMethod("POST");
 
@@ -605,9 +625,7 @@ public class WebService extends Activity
                             urlConnection.connect();
 
                             JSONObject jObject = new JSONObject();
-                            jObject.accumulate("Password", password);
-                            jObject.accumulate("Service", serviceString);
-                            jObject.accumulate("IP", address);
+                            jObject.accumulate("User", userID);
 
                             String json = jObject.toString();
 
@@ -620,7 +638,101 @@ public class WebService extends Activity
                             os.close();
 
                             InputStream is = new BufferedInputStream(urlConnection.getInputStream());
-                            String response = convertStreamToString(is);
+                            String response = convertStreamToString(is).replaceAll("\\\\", "");
+                            response = response.substring(1, response.length() - 2);
+                            JSONObject jResponse = new JSONObject(response);
+                            message = jResponse.getString("Message");
+
+                            if(jResponse.getBoolean("Result"))
+                            {
+                                isValid = true;
+                            }
+                            else
+                            {
+                                isValid = false;
+                            }
+
+                        } catch(MalformedURLException e)
+                        {
+                            e.printStackTrace();
+                        } catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        } catch (JSONException e)
+                        {
+                            e.printStackTrace();
+                        }
+
+                        return null;
+                    }
+
+                    @Override
+                    protected void onPostExecute(Void aVoid)
+                    {
+                        super.onPostExecute(aVoid);
+                        Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                        if(isValid)
+                        {
+                            Intent doneRegistering = new Intent();
+                            doneRegistering.putExtra(IntentInfo.SELECTION, serviceString);
+                            doneRegistering.putExtra(IntentInfo.USERID, userID);
+                            doneRegistering.putExtra(IntentInfo.USERINDEX, index);
+                            setResult(Activity.RESULT_OK, doneRegistering);
+                            finish();
+                        }
+
+                    }
+                };
+
+                final AsyncTask<Void, Void, Void> addPasswordToDatabase = new AsyncTask<Void, Void, Void>()
+                {
+                    boolean isValid = false;
+                    String message = "";
+                    @Override
+                    protected Void doInBackground(Void... voids)
+                    {
+                        try
+                        {
+                            URL url = new URL("http://" + MainActivity.address + ":3000/add_password");
+                            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                            urlConnection.setRequestMethod("POST");
+
+                            urlConnection.setRequestProperty("Content-Type", "application/json");
+                            urlConnection.setRequestProperty("Accept", "application/json");
+
+                            urlConnection.connect();
+
+                            JSONObject jObject = new JSONObject();
+                            jObject.accumulate("Password", password);
+                            jObject.accumulate("Service", serviceString);
+                            jObject.accumulate("Index", index);
+                            jObject.accumulate("Size", pixelCount);
+
+                            String json = jObject.toString();
+
+                            OutputStream os = urlConnection.getOutputStream();
+                            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                            writer.write(json);
+                            writer.flush();
+
+                            writer.close();
+                            os.close();
+
+                            InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                            String response = convertStreamToString(is).replaceAll("\\\\", "");
+                            response = response.substring(1, response.length() - 2);
+                            JSONObject jResponse = new JSONObject(response);
+                            message = jResponse.getString("Message");
+
+                            if(jResponse.getBoolean("Result"))
+                            {
+                                isValid = true;
+                            }
+                            else
+                            {
+                                isValid = false;
+                            }
+
                         } catch(MalformedURLException e)
                         {
                             e.printStackTrace();
@@ -640,15 +752,13 @@ public class WebService extends Activity
                     protected void onPostExecute(Void aVoid)
                     {
                         super.onPostExecute(aVoid);
-                        Toast.makeText(getBaseContext(), "Password was uploaded!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                        if(isValid)
+                        {
+                            getOkayFromServiceAdd.execute();
+                        }
                     }
                 }.execute();
-
-                Intent doneRegistering = new Intent();
-                doneRegistering.putExtra(IntentInfo.SELECTION, serviceString);
-                doneRegistering.putExtra(IntentInfo.USERID, userID);
-                setResult(Activity.RESULT_OK, doneRegistering);
-                finish();
             }
             else
             {
@@ -673,19 +783,22 @@ public class WebService extends Activity
 
                 // Get the feature vector of this image
                 pixels = ImageTransform.setGridPixelMap(gBitmap);
+                pixelCount = pixels.length * pixels[0].length;
                 featureVector = LBP.generateFeatureVector(pixels);
 
                 final String testPassword = encryptFV();
 
-                AsyncTask<Void, Void, Void> addPasswordToDatabase = new AsyncTask<Void, Void, Void>()
+                /*
+                final AsyncTask<Void, Void, Void> getOkayFromServiceAuth = new AsyncTask<Void, Void, Void>()
                 {
+                    String message = "";
                     boolean isValid = false;
                     @Override
                     protected Void doInBackground(Void... voids)
                     {
                         try
                         {
-                            URL url = new URL("http://" + MainActivity.address + ":3000/passwords/authenticate_password");
+                            URL url = new URL(servicesMap.get(serviceString)+"authentication_result_client");
                             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                             urlConnection.setRequestMethod("POST");
 
@@ -695,9 +808,7 @@ public class WebService extends Activity
                             urlConnection.connect();
 
                             JSONObject jObject = new JSONObject();
-                            jObject.accumulate("Password", testPassword);
-                            jObject.accumulate("Service", serviceString);
-                            jObject.accumulate("IP", address);
+                            jObject.accumulate("User", userID);
 
                             String json = jObject.toString();
 
@@ -710,7 +821,98 @@ public class WebService extends Activity
                             os.close();
 
                             InputStream is = new BufferedInputStream(urlConnection.getInputStream());
-                            String response = convertStreamToString(is);
+                            String response = convertStreamToString(is).replaceAll("\\\\", "");
+                            response = response.substring(1, response.length() - 2);
+                            JSONObject jResponse = new JSONObject(response);
+                            message = jResponse.getString("Message");
+
+                            if(jResponse.getBoolean("Result"))
+                            {
+                                isValid = true;
+                            }
+                            else
+                            {
+                                isValid = false;
+                            }
+
+                        } catch(MalformedURLException e)
+                        {
+                            e.printStackTrace();
+                        } catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        } catch (JSONException e)
+                        {
+                            e.printStackTrace();
+                        }
+
+                        return null;
+                    }
+
+                    @Override
+                    protected void onPostExecute(Void aVoid)
+                    {
+                        super.onPostExecute(aVoid);
+                        Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                        if(isValid)
+                        {
+                            Intent doneAuthenticating = new Intent();
+                            setResult(Activity.RESULT_OK, doneAuthenticating);
+                            finish();
+                        }
+
+                    }
+                };
+
+                final AsyncTask<Void, Void, Void> authPasswordWithDatabase = new AsyncTask<Void, Void, Void>()
+                {
+                    boolean isValid = false;
+                    String message = "";
+                    @Override
+                    protected Void doInBackground(Void... voids)
+                    {
+                        try
+                        {
+                            URL url = new URL("http://" + MainActivity.address + ":3000/authenticate_password");
+                            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                            urlConnection.setRequestMethod("POST");
+
+                            urlConnection.setRequestProperty("Content-Type", "application/json");
+                            urlConnection.setRequestProperty("Accept", "application/json");
+
+                            urlConnection.connect();
+
+                            JSONObject jObject = new JSONObject();
+                            jObject.accumulate("Password", testPassword);
+                            jObject.accumulate("Service", serviceString);
+                            jObject.accumulate("Index", index);
+                            jObject.accumulate("Size", pixelCount);
+
+                            String json = jObject.toString();
+
+                            OutputStream os = urlConnection.getOutputStream();
+                            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                            writer.write(json);
+                            writer.flush();
+
+                            writer.close();
+                            os.close();
+
+                            InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                            String response = convertStreamToString(is).replaceAll("\\\\", "");
+                            response = response.substring(1, response.length() - 2);
+                            JSONObject jResponse = new JSONObject(response);
+                            message = jResponse.getString("Message");
+
+                            if(jResponse.getBoolean("Result"))
+                            {
+                                isValid = true;
+                            }
+                            else
+                            {
+                                isValid = false;
+                            }
+
                         } catch(MalformedURLException e)
                         {
                             e.printStackTrace();
@@ -730,10 +932,294 @@ public class WebService extends Activity
                     protected void onPostExecute(Void aVoid)
                     {
                         super.onPostExecute(aVoid);
-                        Toast.makeText(getBaseContext(), "Password was uploaded!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                        if(isValid)
+                        {
+                            getOkayFromServiceAuth.execute();
+                        }
                     }
-                }.execute();
+                };
 
+                final AsyncTask<Void, Void, Void> authUserWithDatabase = new AsyncTask<Void, Void, Void>()
+                {
+                    boolean isValid = false;
+                    String message = "";
+                    @Override
+                    protected Void doInBackground(Void... voids)
+                    {
+                        try
+                        {
+                            URL url = new URL(servicesMap.get(serviceString)+"authenticate_user/");
+                            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                            urlConnection.setRequestMethod("POST");
+
+                            urlConnection.setRequestProperty("Content-Type", "application/json");
+                            urlConnection.setRequestProperty("Accept", "application/json");
+
+                            urlConnection.connect();
+
+                            JSONObject jObject = new JSONObject();
+                            jObject.accumulate("Service", serviceString);
+                            jObject.accumulate("User", userID);
+
+                            String json = jObject.toString();
+
+                            OutputStream os = urlConnection.getOutputStream();
+                            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                            writer.write(json);
+                            writer.flush();
+
+                            writer.close();
+                            os.close();
+
+                            InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                            String response = convertStreamToString(is).replaceAll("\\\\", "");
+                            response = response.substring(1, response.length() - 2);
+                            JSONObject jResponse = new JSONObject(response);
+                            message = jResponse.getString("Message");
+
+                            if(jResponse.getBoolean("Result"))
+                            {
+                                isValid = true;
+                            }
+                            else
+                            {
+                                isValid = false;
+                            }
+
+                        } catch(MalformedURLException e)
+                        {
+                            e.printStackTrace();
+                        } catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        } catch (JSONException e)
+                        {
+                            e.printStackTrace();
+                        }
+
+                        return null;
+                    }
+
+                    @Override
+                    protected void onPostExecute(Void aVoid)
+                    {
+                        super.onPostExecute(aVoid);
+                        Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                        if(isValid)
+                        {
+                            authPasswordWithDatabase.execute();
+                        }
+                        else
+                        {
+                            pixelCount = -1;
+                        }
+                    }
+                };
+                */
+
+                final Thread authenticateUser = new Thread(new Runnable()
+                {
+                    boolean isValid = false;
+                    String message = "";
+
+                    @Override
+                    public void run()
+                    {
+                        try
+                        {
+                            URL url = new URL("http://131.151.8.33:3001/" + "authenticate_user/");
+                            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                            urlConnection.setRequestMethod("POST");
+
+                            urlConnection.setRequestProperty("Content-Type", "application/json");
+                            urlConnection.setRequestProperty("Accept", "application/json");
+
+                            urlConnection.connect();
+
+                            JSONObject jObject = new JSONObject();
+                            jObject.accumulate("Service", serviceString);
+                            jObject.accumulate("User", userID);
+
+                            String json = jObject.toString();
+
+                            OutputStream os = urlConnection.getOutputStream();
+                            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                            writer.write(json);
+                            writer.flush();
+
+                            writer.close();
+                            os.close();
+
+                            InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                            String response = convertStreamToString(is).replaceAll("\\\\", "");
+                            response = response.substring(1, response.length() - 2);
+                            JSONObject jResponse = new JSONObject(response);
+                            message = jResponse.getString("Message");
+
+                            if (jResponse.getBoolean("Result"))
+                            {
+                                isValid = true;
+                            } else
+                            {
+                                isValid = false;
+                            }
+
+                        } catch (MalformedURLException e)
+                        {
+                            e.printStackTrace();
+                        } catch (IOException e)
+                        {
+                            e.printStackTrace();
+                        } catch (JSONException e)
+                        {
+                            e.printStackTrace();
+                        }
+
+                        runOnUiThread(new Runnable()
+                        {
+                            @Override
+                            public void run()
+                            {
+                                Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                            }
+                        });
+
+                        if(isValid)
+                        {
+                            isValid = false;
+                            try
+                            {
+                                URL url = new URL("http://" + MainActivity.address + ":3000/authenticate_password");
+                                HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                                urlConnection.setRequestMethod("POST");
+
+                                urlConnection.setRequestProperty("Content-Type", "application/json");
+                                urlConnection.setRequestProperty("Accept", "application/json");
+
+                                urlConnection.connect();
+
+                                JSONObject jObject = new JSONObject();
+                                jObject.accumulate("Password", testPassword);
+                                jObject.accumulate("Service", serviceString);
+                                jObject.accumulate("Index", index);
+                                jObject.accumulate("Size", pixelCount);
+
+                                String json = jObject.toString();
+
+                                OutputStream os = urlConnection.getOutputStream();
+                                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                                writer.write(json);
+                                writer.flush();
+
+                                writer.close();
+                                os.close();
+
+                                InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                                String response = convertStreamToString(is).replaceAll("\\\\", "");
+                                response = response.substring(1, response.length() - 2);
+                                JSONObject jResponse = new JSONObject(response);
+                                message = jResponse.getString("Message");
+
+                                if (jResponse.getBoolean("Result"))
+                                {
+                                    isValid = true;
+                                } else
+                                {
+                                    isValid = false;
+                                }
+
+                            } catch (MalformedURLException e)
+                            {
+                                e.printStackTrace();
+                            } catch (IOException e)
+                            {
+                                e.printStackTrace();
+                            } catch (JSONException e)
+                            {
+                                e.printStackTrace();
+                            }
+
+                            runOnUiThread(new Runnable()
+                            {
+                                @Override
+                                public void run()
+                                {
+                                    Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                            if(isValid)
+                            {
+                                isValid = false;
+
+                                try
+                                {
+                                    URL url = new URL("http://131.151.8.33:3001/" + "authentication_result_client");
+                                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                                    urlConnection.setRequestMethod("POST");
+
+                                    urlConnection.setRequestProperty("Content-Type", "application/json");
+                                    urlConnection.setRequestProperty("Accept", "application/json");
+
+                                    urlConnection.connect();
+
+                                    JSONObject jObject = new JSONObject();
+                                    jObject.accumulate("User", userID);
+
+                                    String json = jObject.toString();
+
+                                    OutputStream os = urlConnection.getOutputStream();
+                                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                                    writer.write(json);
+                                    writer.flush();
+
+                                    writer.close();
+                                    os.close();
+
+                                    InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                                    String response = convertStreamToString(is).replaceAll("\\\\", "");
+                                    response = response.substring(1, response.length() - 2);
+                                    JSONObject jResponse = new JSONObject(response);
+                                    message = jResponse.getString("Message");
+
+                                    if (jResponse.getBoolean("Result"))
+                                    {
+                                        isValid = true;
+                                    } else
+                                    {
+                                        isValid = false;
+                                    }
+
+                                } catch (MalformedURLException e)
+                                {
+                                    e.printStackTrace();
+                                } catch (IOException e)
+                                {
+                                    e.printStackTrace();
+                                } catch (JSONException e)
+                                {
+                                    e.printStackTrace();
+                                }
+
+                                runOnUiThread(new Runnable()
+                                {
+                                    @Override
+                                    public void run()
+                                    {
+                                        Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
+                                        if (isValid)
+                                        {
+                                            Intent doneAuthenticating = new Intent();
+                                            setResult(Activity.RESULT_OK, doneAuthenticating);
+                                            finish();
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                });
+                authenticateUser.start();
             }
             else
             {

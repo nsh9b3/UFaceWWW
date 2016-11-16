@@ -29,7 +29,7 @@ public class MainActivity extends Activity implements View.OnClickListener
     public final static int LOGIN_SERVICE_INTENT = 2;
 
     // List of Buttons (services) a user can select
-    public ArrayList<Button> buttonList;
+    public static ArrayList<Button> buttonList;
 
     // List of layouts (rows of services) to place new services
     private ArrayList<LinearLayout> layoutList;
@@ -43,7 +43,7 @@ public class MainActivity extends Activity implements View.OnClickListener
 
     // Base Address for servers
     // This will need to change as soon as the servers stop changing
-    public static String address = "10.106.70.18";
+    public static String address = "131.151.8.33";
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -52,7 +52,7 @@ public class MainActivity extends Activity implements View.OnClickListener
         setContentView(R.layout.activity_main);
 
         // Get the add button and set the listener to this activity (which is a clickListener)
-        Button addButton = (Button)findViewById(R.id.btn_add);
+        final Button addButton = (Button)findViewById(R.id.btn_add);
         addButton.setOnClickListener(this);
 
         // Start a background task to get a new public key
@@ -102,9 +102,15 @@ public class MainActivity extends Activity implements View.OnClickListener
             {
                 super.onPostExecute(aVoid);
                 if(paillier != null)
+                {
                     Toast.makeText(getBaseContext(), "Got the public key!", Toast.LENGTH_SHORT).show();
+                    addButton.setVisibility(View.VISIBLE);
+                }
                 else
+                {
                     Toast.makeText(getBaseContext(), "Could not get the public key!", Toast.LENGTH_SHORT).show();
+                    addButton.setVisibility(View.GONE);
+                }
             }
 
         }.execute();
@@ -157,6 +163,7 @@ public class MainActivity extends Activity implements View.OnClickListener
             boolean createdService = false;
             String serviceName = data.getStringExtra(IntentInfo.SELECTION);
             String userID = data.getStringExtra(IntentInfo.USERID);
+            int userIndex = data.getIntExtra(IntentInfo.USERINDEX, -1);
             for(Button btn : buttonList)
             {
                 if(btn.getText().toString().compareTo(serviceName) == 0)
@@ -167,14 +174,14 @@ public class MainActivity extends Activity implements View.OnClickListener
             }
             if(!createdService)
             {
-                makeNewServiceIcon(serviceName, userID);
+                makeNewServiceIcon(serviceName, userID, userIndex);
             }
             else
                 Toast.makeText(this, "You've already registered with this service", Toast.LENGTH_SHORT).show();
         }
     }
 
-    private void makeNewServiceIcon(String serviceName, String userID)
+    private void makeNewServiceIcon(String serviceName, String userID, int userIndex)
     {
         LinearLayout parentLayout = (LinearLayout)findViewById(R.id.parent_ll);
 
@@ -216,7 +223,7 @@ public class MainActivity extends Activity implements View.OnClickListener
         btnParams.weight = 1;
 
         newServiceBtn.setLayoutParams(btnParams);
-        newServiceBtn.setText(serviceName + " - " + userID);
+        newServiceBtn.setText(serviceName + " - " + userID + " - " + userIndex);
         newServiceBtn.setId(buttonList.size() + btnIDOffset);
         newServiceBtn.setOnClickListener(this);
 

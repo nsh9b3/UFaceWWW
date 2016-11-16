@@ -11,5 +11,6 @@ public interface IntentInfo
     String SELECTION = "sel_serv";
     String LOGIN = "login_serv";
     String USERID = "user_id";
+    String USERINDEX = "user_index";
     String SERVICE_USERID = "serv_user";
 }
