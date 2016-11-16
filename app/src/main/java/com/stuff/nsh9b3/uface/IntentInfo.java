@@ -13,4 +13,6 @@ public interface IntentInfo
     String USERID = "user_id";
     String USERINDEX = "user_index";
     String SERVICE_USERID = "serv_user";
+    String SERVICEURL = "serv_url";
+    String SERVICENAME = "serv_name";
 }

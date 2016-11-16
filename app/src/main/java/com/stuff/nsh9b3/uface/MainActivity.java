@@ -1,9 +1,12 @@
 package com.stuff.nsh9b3.uface;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -21,6 +24,10 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 
 public class MainActivity extends Activity implements View.OnClickListener
 {
@@ -139,7 +146,7 @@ public class MainActivity extends Activity implements View.OnClickListener
                 Button pressedButton = (Button)view;
                 Intent selectServiceIntent = new Intent(this, WebService.class);
                 selectServiceIntent.putExtra(IntentInfo.START, IntentInfo.LOGIN);
-                selectServiceIntent.putExtra(IntentInfo.SERVICE_USERID, pressedButton.getText());
+                selectServiceIntent.putExtra(IntentInfo.SERVICENAME, pressedButton.getText());
                 startActivityForResult(selectServiceIntent, LOGIN_SERVICE_INTENT);
                 break;
         }
@@ -164,6 +171,7 @@ public class MainActivity extends Activity implements View.OnClickListener
             String serviceName = data.getStringExtra(IntentInfo.SELECTION);
             String userID = data.getStringExtra(IntentInfo.USERID);
             int userIndex = data.getIntExtra(IntentInfo.USERINDEX, -1);
+            String serviceURL = data.getStringExtra(IntentInfo.SERVICEURL);
             for(Button btn : buttonList)
             {
                 if(btn.getText().toString().compareTo(serviceName) == 0)
@@ -174,14 +182,23 @@ public class MainActivity extends Activity implements View.OnClickListener
             }
             if(!createdService)
             {
-                makeNewServiceIcon(serviceName, userID, userIndex);
+                // Save the name to a list in sharedPreferences
+                SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+                Set<String> servList = sharedPref.getStringSet(SharedPrefNames.SERVICE_LIST, new HashSet<String>());
+                servList.add(serviceName);
+                SharedPreferences.Editor editor = sharedPref.edit();
+                editor.putStringSet(SharedPrefNames.SERVICE_LIST, servList);
+                editor.putString(SharedPrefNames.SERVICE_NAME + serviceName, userID + " - " + userIndex + " - " + serviceURL);
+                editor.apply();
+
+                makeNewServiceIcon(serviceName);
             }
             else
                 Toast.makeText(this, "You've already registered with this service", Toast.LENGTH_SHORT).show();
         }
     }
 
-    private void makeNewServiceIcon(String serviceName, String userID, int userIndex)
+    private void makeNewServiceIcon(String serviceName)
     {
         LinearLayout parentLayout = (LinearLayout)findViewById(R.id.parent_ll);
 
@@ -223,7 +240,7 @@ public class MainActivity extends Activity implements View.OnClickListener
         btnParams.weight = 1;
 
         newServiceBtn.setLayoutParams(btnParams);
-        newServiceBtn.setText(serviceName + " - " + userID + " - " + userIndex);
+        newServiceBtn.setText(serviceName);// + " - " + userID + " - " + userIndex);
         newServiceBtn.setId(buttonList.size() + btnIDOffset);
         newServiceBtn.setOnClickListener(this);
 
@@ -233,8 +250,15 @@ public class MainActivity extends Activity implements View.OnClickListener
 
     private void getServices()
     {
-        // TODO: Use sharedPreferences
         buttonList = new ArrayList<>();
         layoutList = new ArrayList<>();
+
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        Set<String> servList = sharedPref.getStringSet(SharedPrefNames.SERVICE_LIST, new HashSet<String>());
+
+        for (Iterator<String> it = servList.iterator(); it.hasNext(); ) {
+            String service = it.next();
+            makeNewServiceIcon(service);
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.stuff.nsh9b3.uface;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
@@ -11,6 +12,7 @@ import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
+import android.preference.PreferenceManager;
 import android.provider.MediaStore;
 import android.support.v4.content.FileProvider;
 import android.text.Editable;
@@ -49,7 +51,10 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -135,18 +140,29 @@ public class WebService extends Activity
                 break;
             case IntentInfo.LOGIN:
                 setContentView(R.layout.login_service);
-                String authenticationInfo = startIntent.getStringExtra(IntentInfo.SERVICE_USERID);
-                serviceString = authenticationInfo.split(" - ")[0];
-                userID = authenticationInfo.split(" - ")[1];
-                index = parseInt(authenticationInfo.split(" - ")[2]);
+                String authenticationInfo = startIntent.getStringExtra(IntentInfo.SERVICENAME);
+                serviceString = authenticationInfo;//.split(" - ")[0];
 
+                SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+                String user_index = sharedPref.getString(SharedPrefNames.SERVICE_NAME+serviceString, null);
+                userID = user_index.split(" - ")[0];
+                index = parseInt(user_index.split(" - ")[1]);
+                servicesMap = new HashMap<>();
+                servicesMap.put(serviceString, user_index.split(" - ")[2]);
 
                 // Get Views in this layout
                 textViewLoginService = (TextView)findViewById(R.id.textView_registered_service);
-                textViewLoginService.setText(authenticationInfo.split(" - ")[0]);
+                textViewLoginService.setText(serviceString);
                 textViewLoginUserID = (TextView)findViewById(R.id.textView_registered_userid);
-                textViewLoginUserID.setText(authenticationInfo.split(" - ")[1]);
+                textViewLoginUserID.setText(userID);
                 btnAuthUser = (Button)findViewById(R.id.button_authenticate_user);
+                if(MainActivity.paillier == null)
+                {
+                    Toast.makeText(getBaseContext(), "Cannot get the paillier encryption key.", Toast.LENGTH_SHORT).show();
+                    btnAuthUser.setVisibility(View.GONE);
+                }
+                else
+                    btnAuthUser.setVisibility(View.VISIBLE);
 
                 // Take a picture to register
                 btnAuthUser.setOnClickListener(new View.OnClickListener()
@@ -154,6 +170,7 @@ public class WebService extends Activity
                     @Override
                     public void onClick(View view)
                     {
+                        /*
                         // Used to check the Web Service if the name is valid
                         AsyncTask<Void, Void, Void> checkValidName = new AsyncTask<Void, Void, Void>()
                         {
@@ -212,7 +229,6 @@ public class WebService extends Activity
                             {
                                 super.onPostExecute(aVoid);
 
-                                Random rand = new Random();
                                 if(isValid)
                                 {
                                     Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
@@ -224,30 +240,30 @@ public class WebService extends Activity
                             }
                         }.execute();
 
+*/
+                        Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                        // Ensure that there's a camera activity to handle the intent
+                        if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
+                            // Create the File where the photo should go
+                            File photoFile = null;
+                            try
+                            {
+                                photoFile = createImageFile();
+                            } catch (IOException ex) {
+                                // Error occurred while creating the File
+                            }
 
-                    Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                    // Ensure that there's a camera activity to handle the intent
-                    if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
-                        // Create the File where the photo should go
-                        File photoFile = null;
-                        try
-                        {
-                            photoFile = createImageFile();
-                        } catch (IOException ex) {
-                            // Error occurred while creating the File
+                            // Continue only if the File was successfully created
+                            if (photoFile.exists())
+                            {
+                                // Take a picture and place the information in the newly created file
+                                Uri photoURI = FileProvider.getUriForFile(getApplicationContext(),
+                                        "com.stuff.nsh9b3.uface.fileprovider",
+                                        photoFile);
+                                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
+                                startActivityForResult(takePictureIntent, REQUEST_AUTH_PHOTO);
+                            }
                         }
-
-                        // Continue only if the File was successfully created
-                        if (photoFile.exists())
-                        {
-                            // Take a picture and place the information in the newly created file
-                            Uri photoURI = FileProvider.getUriForFile(getApplicationContext(),
-                                    "com.stuff.nsh9b3.uface.fileprovider",
-                                    photoFile);
-                            takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
-                            startActivityForResult(takePictureIntent, REQUEST_AUTH_PHOTO);
-                        }
-                    }
 
                     }
                 });
@@ -601,7 +617,7 @@ public class WebService extends Activity
 
                 // Get the feature vector of this image
                 pixels = ImageTransform.setGridPixelMap(gBitmap);
-                pixelCount = pixels.length * pixels[0].length;
+                pixelCount = (gBitmap.getWidth() - 2) * (gBitmap.getHeight() - 2);
                 featureVector = LBP.generateFeatureVector(pixels);
 
                 final String password = encryptFV();
@@ -677,6 +693,7 @@ public class WebService extends Activity
                             doneRegistering.putExtra(IntentInfo.SELECTION, serviceString);
                             doneRegistering.putExtra(IntentInfo.USERID, userID);
                             doneRegistering.putExtra(IntentInfo.USERINDEX, index);
+                            doneRegistering.putExtra(IntentInfo.SERVICEURL, servicesMap.get(serviceString));
                             setResult(Activity.RESULT_OK, doneRegistering);
                             finish();
                         }
@@ -783,7 +800,7 @@ public class WebService extends Activity
 
                 // Get the feature vector of this image
                 pixels = ImageTransform.setGridPixelMap(gBitmap);
-                pixelCount = pixels.length * pixels[0].length;
+                pixelCount = (gBitmap.getWidth() - 2) * (gBitmap.getHeight() - 2);
                 featureVector = LBP.generateFeatureVector(pixels);
 
                 final String testPassword = encryptFV();
@@ -1028,7 +1045,7 @@ public class WebService extends Activity
                     {
                         try
                         {
-                            URL url = new URL("http://131.151.8.33:3001/" + "authenticate_user/");
+                            URL url = new URL(servicesMap.get(serviceString)+ "authenticate_user/");
                             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                             urlConnection.setRequestMethod("POST");
 
@@ -1148,74 +1165,76 @@ public class WebService extends Activity
                                     Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
                                 }
                             });
-                            if(isValid)
+
+                            isValid = false;
+
+                            try
                             {
-                                isValid = false;
+                                URL url = new URL(servicesMap.get(serviceString) + "authentication_result_client");
+                                HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                                urlConnection.setRequestMethod("POST");
 
-                                try
+                                urlConnection.setRequestProperty("Content-Type", "application/json");
+                                urlConnection.setRequestProperty("Accept", "application/json");
+
+                                urlConnection.connect();
+
+                                JSONObject jObject = new JSONObject();
+                                jObject.accumulate("User", userID);
+
+                                String json = jObject.toString();
+
+                                OutputStream os = urlConnection.getOutputStream();
+                                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                                writer.write(json);
+                                writer.flush();
+
+                                writer.close();
+                                os.close();
+
+                                InputStream is = new BufferedInputStream(urlConnection.getInputStream());
+                                String response = convertStreamToString(is).replaceAll("\\\\", "");
+                                response = response.substring(1, response.length() - 2);
+                                JSONObject jResponse = new JSONObject(response);
+                                message = jResponse.getString("Message");
+
+                                if (jResponse.getBoolean("Result"))
                                 {
-                                    URL url = new URL("http://131.151.8.33:3001/" + "authentication_result_client");
-                                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
-                                    urlConnection.setRequestMethod("POST");
-
-                                    urlConnection.setRequestProperty("Content-Type", "application/json");
-                                    urlConnection.setRequestProperty("Accept", "application/json");
-
-                                    urlConnection.connect();
-
-                                    JSONObject jObject = new JSONObject();
-                                    jObject.accumulate("User", userID);
-
-                                    String json = jObject.toString();
-
-                                    OutputStream os = urlConnection.getOutputStream();
-                                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
-                                    writer.write(json);
-                                    writer.flush();
-
-                                    writer.close();
-                                    os.close();
-
-                                    InputStream is = new BufferedInputStream(urlConnection.getInputStream());
-                                    String response = convertStreamToString(is).replaceAll("\\\\", "");
-                                    response = response.substring(1, response.length() - 2);
-                                    JSONObject jResponse = new JSONObject(response);
-                                    message = jResponse.getString("Message");
-
-                                    if (jResponse.getBoolean("Result"))
-                                    {
-                                        isValid = true;
-                                    } else
-                                    {
-                                        isValid = false;
-                                    }
-
-                                } catch (MalformedURLException e)
+                                    isValid = true;
+                                } else
                                 {
-                                    e.printStackTrace();
-                                } catch (IOException e)
-                                {
-                                    e.printStackTrace();
-                                } catch (JSONException e)
-                                {
-                                    e.printStackTrace();
+                                    isValid = false;
                                 }
 
-                                runOnUiThread(new Runnable()
-                                {
-                                    @Override
-                                    public void run()
-                                    {
-                                        Toast.makeText(getBaseContext(), message, Toast.LENGTH_SHORT).show();
-                                        if (isValid)
-                                        {
-                                            Intent doneAuthenticating = new Intent();
-                                            setResult(Activity.RESULT_OK, doneAuthenticating);
-                                            finish();
-                                        }
-                                    }
-                                });
+                            } catch (MalformedURLException e)
+                            {
+                                e.printStackTrace();
+                            } catch (IOException e)
+                            {
+                                e.printStackTrace();
+                            } catch (JSONException e)
+                            {
+                                e.printStackTrace();
                             }
+
+                            runOnUiThread(new Runnable()
+                            {
+                                @Override
+                                public void run()
+                                {
+                                    if (isValid)
+                                    {
+                                        Toast.makeText(getBaseContext(), "Successfully Authenticated", Toast.LENGTH_SHORT).show();
+                                        Intent doneAuthenticating = new Intent();
+                                        setResult(Activity.RESULT_OK, doneAuthenticating);
+                                        finish();
+                                    }
+                                    else
+                                    {
+                                        Toast.makeText(getBaseContext(), "Failed to Authenticate. Try again.", Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                            });
                         }
                     }
                 });
